@@ -162,9 +162,11 @@ import 'package:demo_flutter/screens/signup_screen.dart';
 import 'package:demo_flutter/screens/welcome.dart';
 import 'package:demo_flutter/add_expense_page.dart';
 import 'package:demo_flutter/mainPages/home_navigation_page.dart';
+import 'package:demo_flutter/add_expense_options.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:provider/provider.dart';
-import 'theme_provider.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
+import 'theme_bloc.dart';
+import 'theme_state.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -177,8 +179,8 @@ void main() async {
               projectId: "expensetracker-81336"))
       : await Firebase.initializeApp();
   runApp(
-    ChangeNotifierProvider(
-      create: (context) => ThemeProvider(),
+    BlocProvider(
+      create: (context) => ThemeBloc(),
       child: const MyApp(),
     ),
   );
@@ -189,77 +191,49 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final themeProvider = Provider.of<ThemeProvider>(context);
-    return MaterialApp(
-      // theme: ThemeData(
-      //     textTheme: const TextTheme(
-      //   bodyMedium: TextStyle(
-      //     fontFamily: 'Ubuntu',
-      //   ),
-      // )),
-      // darkTheme: ThemeData(
-      //   brightness: Brightness.dark,
-      //   primaryColor: Colors.black,
-      //   scaffoldBackgroundColor: Colors.black,
-      //   appBarTheme: const AppBarTheme(
-      //     color: Colors.black,
-      //     iconTheme: IconThemeData(color: Colors.white),
-      //   ),
-      //   bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-      //     backgroundColor: Colors.black,
-      //     selectedItemColor: Colors.white,
-      //     unselectedItemColor: Colors.white70,
-      //   ),
-      //   floatingActionButtonTheme: const FloatingActionButtonThemeData(
-      //     backgroundColor: Colors.greenAccent,
-      //   ),
-      //   textTheme: const TextTheme(
-      //     bodyMedium: TextStyle(color: Colors.white),
-      //   ),
-      // ),
-      // themeMode: ThemeMode.system,
-      theme: ThemeData(
-          textTheme: const TextTheme(
-        bodyMedium: TextStyle(
-          fontFamily: 'Ubuntu',
-        ),
-      )),
-      darkTheme: ThemeData(
-        brightness: Brightness.dark,
-        primaryColor: Colors.black,
-        scaffoldBackgroundColor: Colors.black,
-        appBarTheme: const AppBarTheme(
-          color: Colors.black,
-          iconTheme: IconThemeData(color: Colors.white),
-        ),
-        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-          backgroundColor: Colors.black,
-          selectedItemColor: Colors.white,
-          unselectedItemColor: Colors.white70,
-        ),
-        floatingActionButtonTheme: const FloatingActionButtonThemeData(
-          backgroundColor: Colors.greenAccent,
-        ),
-        textTheme: const TextTheme(
-          bodyMedium: TextStyle(color: Colors.white),
-        ),
-      ),
-      themeMode: themeProvider.themeMode,
-      initialRoute: HomeScreen.id,
-      routes: {
-        HomeScreen.id: (context) => const HomeScreen(),
-        LoginScreen.id: (context) => const LoginScreen(),
-        SignUpScreen.id: (context) => const SignUpScreen(),
-        WelcomeScreen.id: (context) => const WelcomeScreen(),
-        HomeNavigationPage.routeName: (context) => const HomeNavigationPage(),
-        AddExpensePage.routeName: (context) => const AddExpensePage(),
+    // Using BlocBuilder to listen for theme changes
+    return BlocBuilder<ThemeBloc, ThemeState>(
+      builder: (context, themeState) {
+        return MaterialApp(
+          theme: themeState.themeData, // Apply the theme from ThemeState
+          darkTheme: ThemeData(
+            brightness: Brightness.dark,
+            primaryColor: Colors.black,
+            scaffoldBackgroundColor: Colors.black,
+            appBarTheme: const AppBarTheme(
+              color: Colors.black,
+              iconTheme: IconThemeData(color: Colors.white),
+            ),
+            bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+              backgroundColor: Colors.black,
+              selectedItemColor: Colors.white,
+              unselectedItemColor: Colors.white70,
+            ),
+            floatingActionButtonTheme: const FloatingActionButtonThemeData(
+              backgroundColor: Colors.greenAccent,
+            ),
+            textTheme: const TextTheme(
+              bodyMedium: TextStyle(color: Colors.white),
+            ),
+          ),
+          themeMode: ThemeMode
+              .system, // You might want to control this with Bloc as well
+          initialRoute: HomeScreen.id,
+          routes: {
+            HomeScreen.id: (context) => const HomeScreen(),
+            LoginScreen.id: (context) => const LoginScreen(),
+            SignUpScreen.id: (context) => const SignUpScreen(),
+            WelcomeScreen.id: (context) => const WelcomeScreen(),
+            HomeNavigationPage.routeName: (context) =>
+                const HomeNavigationPage(),
+            AddExpensePage.routeName: (context) => const AddExpensePage(),
+            '/addExpenseOptions': (context) => AddExpenseOptionsPage(),
+          },
+        );
       },
     );
   }
 }
-
-
-
 
 
 

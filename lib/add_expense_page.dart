@@ -23,12 +23,16 @@ class _AddExpensePageState extends State<AddExpensePage> {
   List<String> currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AED'];
   String _selectedCurrency = 'USD'; // Default currency
   List<String> categories = [
-    'Food',
+    'Groceries',
+    'Dining Out',
     'Transport',
-    'Shopping',
-    'Utilities'
+    'Entertainment',
+    'Travel',
+    'Education',
+    'Clothing & Accessories',
+    'Miscellaneous'
   ]; // Example categories
-  String _selectedCategory = 'Food'; // Default category
+  String _selectedCategory = 'Miscellaneous'; // Default category
 
   Future<void> _pickDate(BuildContext context) async {
     final DateTime? pickedDate = await showDatePicker(

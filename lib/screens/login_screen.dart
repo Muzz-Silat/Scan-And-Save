@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:demo_flutter/components/components.dart';
 import 'package:demo_flutter/constants.dart';
-import 'package:demo_flutter/screens/welcome.dart';
+import 'package:demo_flutter/screens/signup_screen.dart';
 import 'package:demo_flutter/mainPages/home_navigation_page.dart';
 import 'package:loading_overlay/loading_overlay.dart';
 import 'package:demo_flutter/screens/home_screen.dart';
@@ -20,6 +20,7 @@ class _LoginScreenState extends State<LoginScreen> {
   late String _email;
   late String _password;
   bool _saving = false;
+  bool _passwordVisible = false;
 
   @override
   Widget build(BuildContext context) {
@@ -29,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
         return false;
       },
       child: Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: const Color.fromARGB(255, 46, 46, 46),
         body: LoadingOverlay(
           isLoading: _saving,
           child: SafeArea(
@@ -37,97 +38,237 @@ class _LoginScreenState extends State<LoginScreen> {
               padding: const EdgeInsets.all(20.0),
               child: Column(
                 children: [
-                  const TopScreenImage(screenImageName: 'welcome.png'),
                   Expanded(
                     flex: 2,
                     child: Column(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      mainAxisAlignment: MainAxisAlignment.start,
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        const ScreenTitle(title: 'Login'),
-                        CustomTextField(
-                          textField: TextField(
-                              onChanged: (value) {
-                                _email = value;
-                              },
-                              style: const TextStyle(
-                                fontSize: 20,
-                              ),
-                              decoration: kTextInputDecoration.copyWith(
-                                  hintText: 'Email')),
-                        ),
-                        CustomTextField(
-                          textField: TextField(
-                            obscureText: true,
-                            onChanged: (value) {
-                              _password = value;
-                            },
-                            style: const TextStyle(
-                              fontSize: 20,
+                        SizedBox(height: 60),
+                        SizedBox(
+                          width: double.infinity, // Take the full width
+                          child: Text(
+                            'Scan & Save',
+                            textAlign:
+                                TextAlign.center, // Center text horizontally
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 40,
+                              fontFamily: 'DotGothic16',
+                              fontWeight: FontWeight.w400,
                             ),
-                            decoration: kTextInputDecoration.copyWith(
-                                hintText: 'Password'),
                           ),
                         ),
-                        CustomBottomScreen(
-                          textButton: 'Login',
-                          heroTag: 'login_btn',
-                          question: 'Forgot password?',
-                          buttonPressed: () async {
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            setState(() {
-                              _saving = true;
-                            });
-                            try {
-                              await _auth.signInWithEmailAndPassword(
-                                  email: _email, password: _password);
-
-                              if (context.mounted) {
+                        SizedBox(height: 40),
+                        Container(
+                          width: 308,
+                          height: 66,
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          decoration: BoxDecoration(
+                            color: Color(0xFF131313),
+                            borderRadius: BorderRadius.circular(20),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Color(0x3F000000),
+                                blurRadius: 4,
+                                offset: Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: Center(
+                            child: TextField(
+                              onChanged: (value) {
                                 setState(() {
-                                  _saving = false;
-                                  Navigator.popAndPushNamed(
-                                      context, LoginScreen.id);
+                                  _email = value;
                                 });
-                                Navigator.pushReplacementNamed(
-                                    context, HomeNavigationPage.routeName);
-                              }
-                            } catch (e) {
-                              signUpAlert(
-                                context: context,
-                                onPressed: () {
+                              },
+                              style: const TextStyle(
+                                fontFamily: "CourierPrime",
+                                fontSize: 18,
+                                color: Colors.white,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Email Address',
+                                labelStyle: TextStyle(color: Colors.grey),
+                                prefixIcon:
+                                    Icon(Icons.email, color: Colors.grey),
+                                hintStyle: TextStyle(
+                                    color: Colors.white.withOpacity(0.6)),
+                                border: InputBorder.none,
+                              ),
+                              keyboardType: TextInputType.emailAddress,
+                            ),
+                          ),
+                        ),
+                        SizedBox(height: 20),
+                        _buildPasswordInputField('Password', _passwordVisible,
+                            (value) {
+                          setState(() {
+                            _password = value;
+                          });
+                        }, () {
+                          setState(() {
+                            _passwordVisible = !_passwordVisible;
+                          });
+                        }),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 20.0),
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              primary: Color(0xFF67F0AD), // Background color
+                              onPrimary: Colors.black, // Text color
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(33),
+                              ),
+                              shadowColor: Color(0x3F000000),
+                              elevation: 4,
+                              fixedSize: Size(308, 43), // Button size
+                            ),
+                            onPressed: () async {
+                              // Attempt to log in the user
+                              FocusManager.instance.primaryFocus?.unfocus();
+                              setState(() {
+                                _saving = true;
+                              });
+                              try {
+                                await _auth.signInWithEmailAndPassword(
+                                  email: _email,
+                                  password: _password,
+                                );
+
+                                if (context.mounted) {
+                                  Navigator.pushReplacementNamed(
+                                    context,
+                                    HomeNavigationPage.routeName,
+                                  );
+                                }
+                              } catch (e) {
+                                // Handle login error
+                                showAlert(
+                                  context: context,
+                                  title: 'Login Error',
+                                  desc: 'Invalid email or password.',
+                                  onPressed: () => Navigator.pop(context),
+                                ).show();
+                              } finally {
+                                if (context.mounted) {
                                   setState(() {
                                     _saving = false;
                                   });
-                                  Navigator.popAndPushNamed(
-                                      context, LoginScreen.id);
-                                },
-                                title: 'WRONG PASSWORD OR EMAIL',
-                                desc:
-                                    'Confirm your email and password and try again',
-                                btnText: 'Try Now',
-                              ).show();
-                            }
-                          },
-                          questionPressed: () {
-                            signUpAlert(
-                              onPressed: () async {
-                                await FirebaseAuth.instance
-                                    .sendPasswordResetEmail(email: _email);
-                              },
-                              title: 'RESET YOUR PASSWORD',
-                              desc:
-                                  'Click on the button to reset your password',
-                              btnText: 'Reset Now',
-                              context: context,
-                            ).show();
-                          },
+                                }
+                              }
+                            },
+                            child: Text(
+                              'Login',
+                              style: TextStyle(
+                                fontFamily: 'CourierPrime',
+                                fontSize: 24,
+                                color: Colors.black,
+                              ),
+                            ),
+                          ),
                         ),
+                        Container(
+                          width: 308, // Match the width to the buttons above
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              GestureDetector(
+                                onTap: () {
+                                  Navigator.pushNamed(
+                                      context,
+                                      SignUpScreen
+                                          .id); // Navigate to Sign Up screen
+                                },
+                                child: Text(
+                                  "Sign Up",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontFamily: "CourierPrime",
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                              GestureDetector(
+                                onTap: () async {
+                                  // Forgot password functionality
+                                  await FirebaseAuth.instance
+                                      .sendPasswordResetEmail(email: _email);
+                                  // Show confirmation dialog/alert
+                                  showAlert(
+                                    context: context,
+                                    title: 'Reset Email Sent',
+                                    desc:
+                                        'Check your email to reset your password.',
+                                    onPressed: () => Navigator.pop(context),
+                                  ).show();
+                                },
+                                child: Text(
+                                  "Forgot password?",
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontFamily: "CourierPrime",
+                                    color: Colors.grey,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        )
                       ],
                     ),
                   ),
                 ],
               ),
             ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPasswordInputField(String label, bool visible,
+      Function(String) onChanged, VoidCallback toggleVisibility) {
+    return Container(
+      width: 308,
+      height: 66,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: Color(0xFF131313),
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Color(0x3F000000),
+            blurRadius: 4,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: TextField(
+          onChanged: onChanged,
+          obscureText: !visible,
+          style: const TextStyle(
+            fontFamily: "CourierPrime",
+            fontSize: 18,
+            color: Colors.white,
+          ),
+          decoration: InputDecoration(
+            labelText: label,
+            labelStyle: TextStyle(color: Colors.grey),
+            prefixIcon: Icon(Icons.lock, color: Colors.grey),
+            suffixIcon: IconButton(
+              icon: Icon(
+                // Choose the icon depending on the state
+                visible ? Icons.visibility : Icons.visibility_off,
+                color: Colors.grey,
+              ),
+              onPressed: toggleVisibility,
+            ),
+            hintText: '••••••••',
+            hintStyle: TextStyle(color: Colors.white.withOpacity(0.6)),
+            border: InputBorder.none,
           ),
         ),
       ),

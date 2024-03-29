@@ -3,7 +3,9 @@ import 'HomePage.dart'; // Adjust the import path
 import 'TransactionsPage.dart'; // Adjust the import path
 import 'UpcomingTransactionsPage.dart';
 import 'AccountPage.dart'; // Adjust the import path
-import '../add_expense_page.dart'; // Import the AddExpensePage
+import 'package:demo_flutter/add_expense_options.dart';
+import 'SmartBudgetPage.dart';
+import 'package:demo_flutter/expense_overview_page.dart';
 
 class HomeNavigationPage extends StatefulWidget {
   static const String routeName = '/homeNavigationPage';
@@ -21,8 +23,8 @@ class _HomeNavigationPageState extends State<HomeNavigationPage> {
   // List of pages for navigation
   final List<Widget> _screens = [
     const HomePage(),
-    const TransactionPage(),
     const PastTransactionsPage(),
+    const SmartBudgetPage(),
     const AccountPage(),
   ];
 
@@ -47,7 +49,10 @@ class _HomeNavigationPageState extends State<HomeNavigationPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.pushNamed(context, AddExpensePage.routeName);
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (context) => AddExpenseOptionsPage()),
+          );
         },
         child: const Icon(Icons.add),
         backgroundColor: Colors.greenAccent,
@@ -70,8 +75,9 @@ class _HomeNavigationPageState extends State<HomeNavigationPage> {
                     label: 'Transactions',
                   ),
                   BottomNavigationBarItem(
-                    icon: Icon(Icons.history),
-                    label: 'Past',
+                    icon: Icon(Icons
+                        .account_balance_wallet), // or Icons.pie_chart for a pie chart icon
+                    label: 'Budget',
                   ),
                   BottomNavigationBarItem(
                     icon: Icon(Icons.account_circle),
