@@ -197,7 +197,9 @@ class MyApp extends StatelessWidget {
           selectedItemColor: Colors.greenAccent,
         ),
         appBarTheme: const AppBarTheme(
-          color: Colors.black,
+          centerTitle: true,
+          elevation: 0,
+          color: Color.fromARGB(255, 46, 46, 46),
           iconTheme: IconThemeData(color: Colors.white),
         ),
         scaffoldBackgroundColor: const Color.fromARGB(255, 46, 46, 46),

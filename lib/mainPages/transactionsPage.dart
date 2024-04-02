@@ -759,7 +759,11 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
       appBar: AppBar(
         title: Text(
           "Past Transactions",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+          style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontFamily: "CourierPrime",
+              fontSize: 24),
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(

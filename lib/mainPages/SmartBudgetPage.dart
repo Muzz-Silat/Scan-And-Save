@@ -400,7 +400,14 @@ class _SmartBudgetPageState extends State<SmartBudgetPage> {
     savings = monthlyIncome - totalCategoryBudgets;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Smart Budget Plan'),
+        title: const Text(
+          'Smart Budget Plan',
+          style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontFamily: "CourierPrime",
+              fontSize: 24),
+        ),
         centerTitle: true,
       ),
       body: isLoading

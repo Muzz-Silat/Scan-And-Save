@@ -6,6 +6,7 @@ import 'AccountPage.dart'; // Adjust the import path
 import 'package:demo_flutter/add_expense_options.dart';
 import 'SmartBudgetPage.dart';
 import 'package:demo_flutter/expense_analysis.dart';
+import 'package:demo_flutter/add_expense_page.dart';
 import 'package:demo_flutter/expense_overview_page.dart';
 
 class HomeNavigationPage extends StatefulWidget {
@@ -26,8 +27,8 @@ class _HomeNavigationPageState extends State<HomeNavigationPage> {
     const HomePage(),
     const PastTransactionsPage(),
     const SmartBudgetPage(),
-    // const AccountPage(),
-    ExpenseAnalysisPage(),
+    const AccountPage(),
+    //ExpenseAnalysisPage(),
   ];
 
   @override
@@ -51,10 +52,7 @@ class _HomeNavigationPageState extends State<HomeNavigationPage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(builder: (context) => AddExpenseOptionsPage()),
-          );
+          Navigator.pushNamed(context, AddExpensePage.routeName);
         },
         child: const Icon(Icons.add),
         backgroundColor: Colors.greenAccent,

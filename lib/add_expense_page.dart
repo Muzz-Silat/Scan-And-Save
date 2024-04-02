@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
+import 'package:demo_flutter/invoice_detection_page.dart';
 import 'expense.dart'; // Ensure this points to your Expense model
 import 'dart:math' as math;
 import 'firestore_service.dart'; // Ensure this points to your Firestore service
@@ -24,6 +25,9 @@ class _AddExpensePageState extends State<AddExpensePage> {
   final FirestoreService _firestoreService = FirestoreService();
   List<String> currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AED'];
   String _selectedCurrency = 'USD'; // Default currency
+  FocusNode _amountFocusNode = FocusNode();
+  Color _labelTextColor = Colors.grey; // Default color for the label text
+
   List<String> categories = [
     'Auto',
     'Groceries',
@@ -163,7 +167,23 @@ class _AddExpensePageState extends State<AddExpensePage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Add Expense"),
+        title: Text(
+          "Add Expense",
+          style: TextStyle(fontFamily: 'CourierPrime'),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.document_scanner),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (context) =>
+                        InvoiceDetectionPage()), // Assuming this is the correct page class name
+              );
+            },
+          ),
+        ],
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -173,9 +193,67 @@ class _AddExpensePageState extends State<AddExpensePage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                TextFormField(
+                  controller: _descriptionController,
+                  cursorColor: Color.fromARGB(255, 103, 240, 173),
+                  style: TextStyle(
+                    fontFamily: 'CourierPrime',
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Description',
+                    labelStyle:
+                        TextStyle(color: Color.fromARGB(255, 103, 240, 173)),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Color.fromARGB(255, 103, 240, 173)),
+                    ),
+                  ),
+                  validator: (value) {
+                    if (value == null || value.isEmpty) {
+                      return 'Please enter a description';
+                    }
+                    return null;
+                  },
+                ),
+                TextFormField(
+                  controller: _amountController,
+                  cursorColor: Color.fromARGB(255, 103, 240, 173),
+                  style: TextStyle(
+                    fontFamily: 'CourierPrime',
+                  ),
+                  decoration: InputDecoration(
+                    labelText: 'Amount',
+                    labelStyle:
+                        TextStyle(color: Color.fromARGB(255, 103, 240, 173)),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Color.fromARGB(255, 103, 240, 173)),
+                    ),
+                  ),
+                  keyboardType: TextInputType.numberWithOptions(decimal: true),
+                  validator: (value) {
+                    if (value == null ||
+                        value.isEmpty ||
+                        double.tryParse(value) == null) {
+                      return 'Please enter a valid amount';
+                    }
+                    return null;
+                  },
+                ),
                 DropdownButtonFormField(
                   value: _selectedCurrency,
-                  decoration: InputDecoration(labelText: 'Currency'),
+                  style: TextStyle(
+                      color: Colors.white, fontFamily: "CourierPrime"),
+                  decoration: InputDecoration(
+                    labelText: 'Currency',
+                    labelStyle: TextStyle(
+                        color: Color.fromARGB(255, 103, 240, 173),
+                        fontFamily: "CourierPrime"),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Color.fromARGB(255, 103, 240, 173)),
+                    ),
+                  ),
                   items:
                       currencies.map<DropdownMenuItem<String>>((String value) {
                     return DropdownMenuItem<String>(
@@ -191,7 +269,18 @@ class _AddExpensePageState extends State<AddExpensePage> {
                 ),
                 DropdownButtonFormField(
                   value: _selectedCategory,
-                  decoration: InputDecoration(labelText: 'Category'),
+                  style: TextStyle(
+                      color: Colors.white, fontFamily: "CourierPrime"),
+                  decoration: InputDecoration(
+                    labelText: 'Category',
+                    labelStyle: TextStyle(
+                        color: Color.fromARGB(255, 103, 240, 173),
+                        fontFamily: "CourierPrime"),
+                    focusedBorder: UnderlineInputBorder(
+                      borderSide:
+                          BorderSide(color: Color.fromARGB(255, 103, 240, 173)),
+                    ),
+                  ),
                   items:
                       categories.map<DropdownMenuItem<String>>((String value) {
                     return DropdownMenuItem<String>(
@@ -205,30 +294,11 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     });
                   },
                 ),
-                TextFormField(
-                  controller: _amountController,
-                  decoration: InputDecoration(labelText: 'Amount'),
-                  keyboardType: TextInputType.numberWithOptions(decimal: true),
-                  validator: (value) {
-                    if (value == null ||
-                        value.isEmpty ||
-                        double.tryParse(value) == null) {
-                      return 'Please enter a valid amount';
-                    }
-                    return null;
-                  },
-                ),
-                TextFormField(
-                  controller: _descriptionController,
-                  decoration: InputDecoration(labelText: 'Description'),
-                  validator: (value) {
-                    if (value == null || value.isEmpty) {
-                      return 'Please enter a description';
-                    }
-                    return null;
-                  },
+                SizedBox(
+                  height: 10,
                 ),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.start,
                   children: [
                     IconButton(
                       icon: Icon(Icons.calendar_today),
@@ -237,13 +307,31 @@ class _AddExpensePageState extends State<AddExpensePage> {
                     ),
                     SizedBox(width: 10),
                     Text(
-                        'Selected date: ${DateFormat('yyyy-MM-dd').format(_selectedDate)}'),
+                      'Selected date: ${DateFormat('dd-MM-yyyy').format(_selectedDate)}',
+                      style: TextStyle(fontFamily: "CourierPrime"),
+                    ),
                   ],
                 ),
                 Center(
                   child: ElevatedButton(
                     onPressed: _submitExpense,
-                    child: Text('Submit Expense'),
+                    child: Text(
+                      'Submit Expense',
+                      style: TextStyle(
+                        fontFamily: 'CourierPrime',
+                        color: Colors.black, // Black text color
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      primary: Color.fromARGB(
+                          255, 103, 240, 173), // Button background color
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(30), // More rounded corners
+                      ),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 16), // Larger button
+                    ),
                   ),
                 ),
               ],
@@ -260,4 +348,10 @@ class _AddExpensePageState extends State<AddExpensePage> {
     _descriptionController.dispose();
     super.dispose();
   }
+
+// Use this to update the focus color globally or just for specific TextFormFields
+  // final OutlineInputBorder border = OutlineInputBorder(
+  //   borderSide:
+  //       BorderSide(color: Color.fromARGB(255, 103, 240, 173), width: 1.0),
+  // );
 }

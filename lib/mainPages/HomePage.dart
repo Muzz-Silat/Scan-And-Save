@@ -1292,8 +1292,21 @@ class _CalendarWeeklyViewState extends State<CalendarWeeklyView> {
   @override
   void initState() {
     super.initState();
-    groupValue = widget.initialSelectedIndex;
     _initDates();
+    // Find the index of the current day
+    DateTime now = DateTime.now();
+    groupValue = dates.indexWhere((date) =>
+        date.day == now.day &&
+        date.month == now.month &&
+        date.year == now.year);
+    if (groupValue == -1) {
+      // This means today's date was not found in the list (shouldn't happen, but as a fallback)
+      groupValue = 0;
+    }
+    // Call the onDateSelected to ensure the correct date is selected on the parent widget
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      widget.onDateSelected(dates[groupValue]);
+    });
   }
 
   void _initDates() {
