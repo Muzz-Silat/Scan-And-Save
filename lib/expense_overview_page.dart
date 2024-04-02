@@ -339,12 +339,27 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
     if (user == null) return;
 
     DateTime now = DateTime.now();
-    DateTime startOfMonth = DateTime(now.year, now.month, 1);
+    DateTime
+        startOfPeriod; // This will either be the start of the current week or the start of the month.
+
+    if (isWeekly) {
+      // Calculate the start of the current week
+      int dayOfWeek = now.weekday;
+      // Adjusting to the start of the current week, considering Monday as the first day of the week
+      DateTime startOfCurrentWeek = now.subtract(Duration(days: dayOfWeek - 1));
+      startOfPeriod = DateTime(startOfCurrentWeek.year,
+          startOfCurrentWeek.month, startOfCurrentWeek.day);
+    } else {
+      // Start of the current month
+      startOfPeriod = DateTime(now.year, now.month, 1);
+    }
+
     var snapshot = await FirebaseFirestore.instance
         .collection('Users')
         .doc(user.uid)
         .collection('Expenses')
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfMonth))
+        .where('date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(startOfPeriod))
         .get();
 
     Map<String, double> tempCategoryExpenses = {};
@@ -359,6 +374,7 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
         tempCategoryExpenses[category] = amount;
       }
     }
+
     setState(() {
       categoryExpenses = tempCategoryExpenses;
     });
@@ -376,115 +392,204 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
         title: Text('Expense Overview'),
         centerTitle: true,
       ),
-      body: weeklyExpenses.isEmpty ||
-              weekStartDates.isEmpty ||
-              categoryExpenses.isEmpty
-          ? Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
-                // Padding(
-                //   padding: const EdgeInsets.only(top: 20),
-                //   child: Text(
-                //     "Weekly Expenses",
-                //     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                //   ),
-                // ),
-                // Expanded(
-                //   child: PageView.builder(
-                //     controller: _pageController,
-                //     itemCount: weeklyExpenses.length,
-                //     onPageChanged: (int index) {
-                //       setState(() {
-                //         currentWeekIndex = index;
-                //       });
-                //     },
-                //     itemBuilder: (context, index) {
-                //       DateTime startDate = weekStartDates[index];
-                //       DateTime endDate = startDate.add(Duration(days: 6));
-                //       double totalExpenses =
-                //           weeklyExpenses[index].reduce((a, b) => a + b);
-                //       return buildExpenseCard(startDate, endDate,
-                //           weeklyExpenses[index], totalExpenses);
-                //     },
-                //   ),
-                // ),
-                Container(
-                  margin:
-                      const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    borderRadius: BorderRadius.circular(15),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              height: 50,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: SegmentButton(
+                      title: "Weekly",
+                      isActive: isWeekly,
+                      onPressed: () {
+                        setState(() {
+                          isWeekly = true;
+                        });
+                        fetchCategoryExpenses();
+                      },
+                    ),
                   ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: SegmentButton(
-                          title: "Weekly",
-                          isActive: isWeekly,
-                          onPressed: () {
-                            setState(() {
-                              isWeekly = true;
-                            });
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: SegmentButton(
-                          title: "Monthly",
-                          isActive: !isWeekly,
-                          onPressed: () {
-                            setState(() {
-                              isWeekly = false;
-                            });
-                          },
-                        ),
-                      )
-                    ],
-                  ),
-                ),
-                FutureBuilder<List<FlSpot>>(
-                  future:
-                      getThisWeeksExpenses(), // the async function returning spots
-                  builder: (context, snapshot) {
-                    if (snapshot.connectionState == ConnectionState.waiting) {
-                      // Show a loading spinner if the data is not fetched yet
-                      return Center(child: CircularProgressIndicator());
-                    } else if (snapshot.hasError) {
-                      // Handle any errors here
-                      return Center(child: Text('Error fetching data'));
-                    }
-
-                    // If we have data, build the LineChart widget
-                    List<FlSpot> spots = snapshot.data ?? [];
-
-                    return AspectRatio(
-                      aspectRatio: 1.70,
-                      child: Padding(
-                        padding: const EdgeInsets.all(16),
-                        child: LineChart(
-                          isWeekly
-                              ? weeklyData(spots)
-                              : monthlyData(), // pass the spots to the chart data method
-                        ),
-                      ),
-                    );
-                  },
-                ),
-                Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: Text(
-                    "Category Expenses",
-                    style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                  ),
-                ),
-                Expanded(
-                  child: CategoryPieChart(categoryExpenses: categoryExpenses),
-                ),
-              ],
+                  Expanded(
+                    child: SegmentButton(
+                      title: "Monthly",
+                      isActive: !isWeekly,
+                      onPressed: () {
+                        setState(() {
+                          isWeekly = false;
+                        });
+                        fetchCategoryExpenses();
+                      },
+                    ),
+                  )
+                ],
+              ),
             ),
+            if (isWeekly)
+              FutureBuilder<List<FlSpot>>(
+                future: getThisWeeksExpenses(),
+                builder: (context, snapshot) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return Center(child: CircularProgressIndicator());
+                  } else if (snapshot.hasError) {
+                    return Center(child: Text('Error fetching data'));
+                  }
+                  List<FlSpot> spots = snapshot.data ?? [];
+                  final preferredCurrencyFuture = getPreferredCurrency();
+
+                  return FutureBuilder<String>(
+                    future: preferredCurrencyFuture,
+                    builder: (context, currencySnapshot) {
+                      if (!currencySnapshot.hasData) {
+                        return Center(child: CircularProgressIndicator());
+                      }
+                      String preferredCurrency = currencySnapshot.data!;
+                      return Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.black, // Background color
+                            borderRadius:
+                                BorderRadius.circular(18), // Rounded corners
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(8.0),
+                            child: Column(
+                              children: [
+                                Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Padding(
+                                    padding:
+                                        const EdgeInsets.only(left: 16, top: 8),
+                                    child: Text(
+                                      preferredCurrency,
+                                      style: TextStyle(
+                                          color: Colors.white,
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          fontFamily: "CourierPrime"),
+                                    ),
+                                  ),
+                                ),
+                                AspectRatio(
+                                  aspectRatio: 1.70,
+                                  child: LineChart(
+                                      weeklyData(spots, preferredCurrency)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              )
+            else // Monthly BarChart
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.black, // Background color
+                    borderRadius: BorderRadius.circular(18), // Rounded corners
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Column(
+                      children: [
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 16, top: 8),
+                            child: FutureBuilder<String>(
+                              future: getPreferredCurrency(),
+                              builder: (context, snapshot) {
+                                if (!snapshot.hasData) {
+                                  return CircularProgressIndicator();
+                                }
+                                return Text(
+                                  snapshot.data!,
+                                  style: TextStyle(
+                                      color: Colors.white,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
+                                      fontFamily: "CourierPrime"),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        FutureBuilder<String>(
+                          future: getPreferredCurrency(),
+                          builder: (context, currencySnapshot) {
+                            if (currencySnapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return Center(child: CircularProgressIndicator());
+                            } else if (!currencySnapshot.hasData) {
+                              return Center(
+                                  child:
+                                      Text('Error loading preferred currency'));
+                            }
+                            return FutureBuilder<BarChartData>(
+                              future: prepareMonthlyBarChartData(
+                                  currencySnapshot.data!),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                    ConnectionState.waiting) {
+                                  return Center(
+                                      child: CircularProgressIndicator());
+                                } else if (snapshot.hasError) {
+                                  return Center(
+                                      child: Text('Error loading chart data'));
+                                }
+
+                                // Assuming you have the horizontally scrollable bar chart logic here
+                                double chartWidth =
+                                    400.0; // Adjust based on your requirements
+                                return SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  child: SizedBox(
+                                    width: chartWidth,
+                                    height: 220, // Adjust based on your design
+                                    child: BarChart(snapshot.data!),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        )
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Padding(
+              padding: const EdgeInsets.all(8.0),
+              child: Text(
+                "Expenses Categorised",
+                style: TextStyle(fontSize: 24, fontFamily: "CourierPrime"),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.black, // Background color
+                  borderRadius: BorderRadius.circular(18), // Rounded corners
+                ),
+                child: CategoryPieChart(categoryExpenses: categoryExpenses),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -522,7 +627,7 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
     return spots;
   }
 
-  LineChartData weeklyData(List<FlSpot> spots) {
+  LineChartData weeklyData(List<FlSpot> spots, String preferredCurrency) {
     return LineChartData(
       gridData: FlGridData(
         show: false,
@@ -565,8 +670,14 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
                 return '';
             }
           },
+          getTextStyles: (context, value) =>
+              const TextStyle(fontFamily: "CourierPrime"),
         ),
-        leftTitles: SideTitles(showTitles: true),
+        leftTitles: SideTitles(
+          showTitles: true,
+          getTextStyles: (context, value) =>
+              const TextStyle(fontFamily: "CourierPrime"),
+        ),
         topTitles: SideTitles(
           showTitles: true,
           getTextStyles: (context, value) => const TextStyle(
@@ -578,6 +689,22 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
           getTextStyles: (context, value) => const TextStyle(
               color: Colors.transparent,
               fontSize: 0), // Make right titles invisible
+        ),
+      ),
+      lineTouchData: LineTouchData(
+        touchTooltipData: LineTouchTooltipData(
+          tooltipBgColor: Colors.black,
+          getTooltipItems: (touchedSpots) {
+            return touchedSpots.map((spot) {
+              final day = getDayOfWeek(spot.x);
+              return LineTooltipItem(
+                '$day: ${NumberFormat.simpleCurrency(name: preferredCurrency).format(spot.y)}',
+                const TextStyle(
+                    color: Color.fromARGB(255, 103, 240, 173),
+                    fontFamily: "CourierPrime"),
+              );
+            }).toList();
+          },
         ),
       ),
       borderData: FlBorderData(
@@ -605,6 +732,146 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
     );
   }
 
+  Future<List<double>> getMonthlyExpenses() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return [];
+    }
+
+    // Assuming each document in your 'Expenses' collection has a 'date' (Timestamp) and 'amount' (double)
+    var now = DateTime.now();
+    var startOfYear = DateTime(now.year, 1, 1);
+    var endOfYear = DateTime(now.year + 1, 1, 0);
+
+    var snapshot = await FirebaseFirestore.instance
+        .collection('Users')
+        .doc(user.uid)
+        .collection('Expenses')
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfYear))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endOfYear))
+        .get();
+
+    Map<int, double> monthlyExpenses = {};
+    for (var doc in snapshot.docs) {
+      var data = doc.data() as Map<String, dynamic>;
+      var date = (data['date'] as Timestamp).toDate();
+      var month = date.month;
+      var amount = data['amount'] as double;
+
+      if (!monthlyExpenses.containsKey(month)) {
+        monthlyExpenses[month] = 0.0;
+      }
+      monthlyExpenses[month] = monthlyExpenses[month]! + amount;
+    }
+
+    // Assuming you want a list of 12 elements, one for each month of the year
+    List<double> expensesPerMonth =
+        List.generate(12, (index) => monthlyExpenses[index + 1] ?? 0.0);
+
+    return expensesPerMonth;
+  }
+
+  Future<BarChartData> prepareMonthlyBarChartData(
+      String preferredCurrency) async {
+    List<double> monthlyExpenses = await getMonthlyExpenses();
+
+    // Adjusting the bar width and spacing
+    final double barWidth = 22; // Adjust this value as needed
+    final double barSpacing = 12; // Adjust space between bars
+
+    List<BarChartGroupData> barGroups =
+        List.generate(monthlyExpenses.length, (index) {
+      return BarChartGroupData(
+        x: index,
+        barsSpace: barSpacing, // Spacing between bars
+        barRods: [
+          BarChartRodData(
+            y: monthlyExpenses[index],
+            width: barWidth, // Adjust the width of the bars
+            colors: [
+              Color.fromARGB(255, 103, 240, 173)
+            ], // Use the same color as your weekly chart
+            borderRadius: BorderRadius.only(
+              topLeft: Radius.circular(6),
+              topRight: Radius.circular(6),
+            ),
+          ),
+        ],
+      );
+    });
+
+    return BarChartData(
+      alignment: BarChartAlignment.spaceBetween,
+      maxY: monthlyExpenses.reduce(math.max) + 100, // Adjust based on your data
+      barGroups: barGroups,
+      titlesData: FlTitlesData(
+        show: true,
+        bottomTitles: SideTitles(
+          showTitles: true,
+          getTextStyles: (context, value) => const TextStyle(
+              fontFamily: "CourierPrime",
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14),
+          margin: 16,
+          getTitles: (double value) => monthName(value.toInt()),
+        ),
+        leftTitles: SideTitles(
+          showTitles: true,
+          margin: 8, // Reduce the margin if necessary
+          reservedSize:
+              30, // Adjust according to your TextStyle to avoid wrapping
+          getTextStyles: (context, value) => const TextStyle(
+              fontFamily: "CourierPrime",
+              fontSize:
+                  14, // Ensure the font size is small enough to fit in one line
+              fontWeight: FontWeight.bold),
+        ),
+        rightTitles: SideTitles(showTitles: false),
+        topTitles: SideTitles(showTitles: false),
+      ),
+      gridData: FlGridData(show: false),
+      borderData: FlBorderData(show: false),
+      barTouchData: BarTouchData(
+        touchTooltipData: BarTouchTooltipData(
+          tooltipBgColor: Colors.black,
+          tooltipPadding: const EdgeInsets.all(8),
+          tooltipMargin: 8,
+          getTooltipItem: (group, groupIndex, rod, rodIndex) {
+            final month = monthName(
+                group.x); // Assuming you have a method to get the month name
+            return BarTooltipItem(
+              '$month: ${NumberFormat.simpleCurrency(name: preferredCurrency).format(rod.y)}',
+              const TextStyle(
+                color: Color.fromARGB(255, 103, 240, 173),
+                fontFamily: "CourierPrime",
+                fontSize: 14,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  String monthName(int monthIndex) {
+    List<String> months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec'
+    ];
+    return months[monthIndex % 12];
+  }
+
   // Monthly data configuration for the line chart
   LineChartData monthlyData() {
     return LineChartData(
@@ -623,6 +890,56 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
         ),
       ],
     );
+  }
+
+  String getDayOfWeek(double xValue) {
+    switch (xValue.toInt()) {
+      case 0:
+        return 'Mon';
+      case 1:
+        return 'Tue';
+      case 2:
+        return 'Wed';
+      case 3:
+        return 'Thu';
+      case 4:
+        return 'Fri';
+      case 5:
+        return 'Sat';
+      case 6:
+        return 'Sun';
+      default:
+        return '';
+    }
+  }
+
+  Future<String> getPreferredCurrency() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      return 'USD'; // Default currency if not logged in or unable to fetch
+    }
+
+    try {
+      // Attempt to fetch the preferred currency setting from Firestore
+      var settingsDocument = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Preferences')
+          .doc('Settings')
+          .get();
+
+      if (settingsDocument.exists) {
+        // Assuming 'PreferredCurrency' field exists and is a string
+        String preferredCurrency =
+            settingsDocument.data()?['PreferredCurrency'] ?? 'USD';
+        return preferredCurrency;
+      }
+    } catch (e) {
+      // Handle errors, e.g., due to network issues, permissions, etc.
+      print("Error fetching preferred currency: $e");
+    }
+
+    return 'USD'; // Default currency if there's an error fetching
   }
 
   Widget buildExpenseCard(DateTime startDate, DateTime endDate,
@@ -789,70 +1106,73 @@ class CategoryPieChart extends StatelessWidget {
       Colors.teal,
       // Add more colors as needed
     ];
-    return AspectRatio(
-      aspectRatio: 1.3,
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: AspectRatio(
-              aspectRatio: 1,
-              child: PieChart(
-                PieChartData(
-                  borderData: FlBorderData(show: false),
-                  sectionsSpace: 0,
-                  centerSpaceRadius: 40,
-                  sections: showingSections(colorList),
-                ),
+
+    // Generate PieChartSectionData from categoryExpenses
+    List<PieChartSectionData> sections = categoryExpenses.keys
+        .toList()
+        .asMap()
+        .map((index, key) {
+          final value = categoryExpenses[key]!;
+          return MapEntry(
+            index,
+            PieChartSectionData(
+              color: colorList[index % colorList.length],
+              value: value,
+              title:
+                  '${(value / categoryExpenses.values.reduce((a, b) => a + b) * 100).toStringAsFixed(0)}%',
+              radius: 50, // Adjust the radius for the size you want
+              titleStyle: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.black,
+                  fontFamily: "CourierPrime"),
+            ),
+          );
+        })
+        .values
+        .toList();
+
+    return Container(
+      margin: EdgeInsets.all(16), // Add some margin for aesthetics
+      padding: EdgeInsets.all(16), // Add padding inside the container
+      decoration: BoxDecoration(
+        color: Colors.black, // Dark background color
+        borderRadius: BorderRadius.circular(18), // Rounded corners
+      ),
+      child: Column(
+        mainAxisSize:
+            MainAxisSize.min, // Make the column's size fit its children
+        children: [
+          SizedBox(
+            // Specify a size for the PieChart for more control over its size
+            height: MediaQuery.of(context).size.width *
+                0.6, // Example dynamic sizing
+            child: PieChart(
+              PieChartData(
+                sections: sections,
+                centerSpaceRadius: 30, // Adjust the size of the inner circle
+                sectionsSpace: 0, // Adjust the space between sections
               ),
             ),
           ),
-          Column(
-            mainAxisSize: MainAxisSize.max,
-            mainAxisAlignment: MainAxisAlignment.end,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: categoryExpenses.keys.map((category) {
-              final colorIndex =
-                  categoryExpenses.keys.toList().indexOf(category) %
-                      colorList.length;
-              final color = colorList[colorIndex];
-              return Indicator(
-                color: color,
-                text: category,
-                isSquare: true,
-              );
-            }).toList(),
-          ),
-          const SizedBox(width: 28),
+          SizedBox(height: 16), // Add some spacing before the legend list
+          // Display category expenses as a list without ListView to avoid nested scrolling issues
+          ...categoryExpenses.entries.map((entry) {
+            final colorIndex =
+                categoryExpenses.keys.toList().indexOf(entry.key) %
+                    colorList.length;
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Indicator(
+                color: colorList[colorIndex],
+                text: '${entry.key}: \$${entry.value.toStringAsFixed(2)}',
+                isSquare: false,
+              ),
+            );
+          }).toList(),
         ],
       ),
     );
-  }
-
-  List<PieChartSectionData> showingSections(List<Color> colorList) {
-    final total = categoryExpenses.values.fold(0.0, (sum, item) => sum + item);
-    var colorIndex = 0;
-
-    return categoryExpenses.entries.map((entry) {
-      final isTouched =
-          false; // You can modify this to respond to touch interactions
-      final fontSize = isTouched ? 18.0 : 16.0;
-      final radius = isTouched ? 60.0 : 50.0;
-      final color = colorList[colorIndex % colorList.length];
-
-      colorIndex++;
-
-      return PieChartSectionData(
-        color: color,
-        value: entry.value,
-        title: '${(entry.value / total * 100).toStringAsFixed(1)}%',
-        radius: radius,
-        titleStyle: TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.bold,
-          color: const Color(0xffffffff),
-        ),
-      );
-    }).toList();
   }
 }
 
@@ -860,16 +1180,12 @@ class Indicator extends StatelessWidget {
   final Color color;
   final String text;
   final bool isSquare;
-  final double size;
-  final Color textColor;
 
   const Indicator({
     Key? key,
     required this.color,
     required this.text,
     this.isSquare = false,
-    this.size = 16,
-    this.textColor = const Color(0xff505050),
   }) : super(key: key);
 
   @override
@@ -877,20 +1193,21 @@ class Indicator extends StatelessWidget {
     return Row(
       children: <Widget>[
         Container(
-          width: size,
-          height: size,
+          width: 16,
+          height: 16,
           decoration: BoxDecoration(
             shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
             color: color,
           ),
         ),
-        const SizedBox(
-          width: 4,
-        ),
+        const SizedBox(width: 4),
         Text(
           text,
-          style: TextStyle(
-              fontSize: 16, fontWeight: FontWeight.bold, color: textColor),
+          style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.bold,
+              color: Colors.white,
+              fontFamily: "CourierPrime"),
         )
       ],
     );

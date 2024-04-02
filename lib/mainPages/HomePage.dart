@@ -392,7 +392,7 @@
 //         });
 //   }
 // }
-import 'dart:ui';
+import 'dart:ui' as ui;
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -419,6 +419,7 @@ class _HomePageState extends State<HomePage> {
   double monthlyIncome = 0.0;
   double totalBudget = 0.0;
   double totalExpenses = 0.0;
+  double currentBudget = 0.0;
   double leftover = 0.0;
   Completer<void> _dataFetchCompleter = Completer<void>();
   Future<void>? _dataFetchFuture;
@@ -427,8 +428,18 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _updateWeekRange();
+    _selectedDate =
+        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
     _loadUserPreferences();
     _fetchDataAndComplete();
+    fetchFinancialData();
+    checkAndRefreshBudget();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    fetchFinancialData(); // Fetch on subsequent builds
   }
 
   void _fetchDataAndComplete() async {
@@ -439,17 +450,44 @@ class _HomePageState extends State<HomePage> {
     _dataFetchFuture = _dataFetchCompleter.future;
   }
 
+  String getCurrentMonthYear() {
+    final now = DateTime.now();
+    return "${now.year}-${now.month.toString().padLeft(2, '0')}";
+  }
+
   Future<void> fetchFinancialData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Fetch monthly income and total budget
-    final userRef =
-        FirebaseFirestore.instance.collection('Users').doc(user.uid);
+    // Fetch settings to get the current budget
+    final settingsRef = FirebaseFirestore.instance
+        .collection('Users')
+        .doc(user.uid)
+        .collection('Preferences')
+        .doc('Settings');
 
-    DocumentSnapshot userSnapshot = await userRef.get();
-    monthlyIncome = userSnapshot.get('totalBudget').toDouble() ?? 0.0;
-    // Calculate total expenses for the current month
+    final settingsSnapshot = await settingsRef.get();
+    if (settingsSnapshot.exists &&
+        settingsSnapshot.data()!.containsKey('totalBudget')) {
+      currentBudget =
+          (settingsSnapshot.data()!['totalBudget'] as num).toDouble();
+    }
+
+    // Fetch the totalBudget for the current month from the "Budget" collection
+    String monthYear = getCurrentMonthYear(); // Use the utility function
+    final budgetRef = FirebaseFirestore.instance
+        .collection('Users')
+        .doc(user.uid)
+        .collection('Budgets')
+        .doc(monthYear);
+
+    final budgetSnapshot = await budgetRef.get();
+    if (budgetSnapshot.exists &&
+        budgetSnapshot.data()!.containsKey('totalBudget')) {
+      totalBudget = (budgetSnapshot.data()!['totalBudget'] as num).toDouble();
+    }
+
+    // Continue to fetch and calculate totalExpenses and leftover
     int month = DateTime.now().month;
     int year = DateTime.now().year;
     await FirebaseFirestore.instance
@@ -463,10 +501,20 @@ class _HomePageState extends State<HomePage> {
       totalExpenses = snapshot.docs
           .fold(0.0, (sum, doc) => sum + (doc['amount'] as double));
     });
-    // Calculate leftover
-    leftover = monthlyIncome - totalExpenses;
 
-    setState(() {});
+    leftover = totalBudget - totalExpenses;
+    print('Current Budget: $currentBudget');
+    print('Total Expenses: $totalExpenses');
+    print('Leftover: $leftover');
+    print('totalBudget: $totalBudget');
+
+    // Ensure you call setState to update the UI if needed
+    setState(() {
+      this.currentBudget =
+          currentBudget; // Make sure you have a state variable for currentBudget
+      this.totalExpenses = totalExpenses;
+      this.leftover = leftover;
+    });
   }
 
   void _updateWeekRange() {
@@ -498,13 +546,19 @@ class _HomePageState extends State<HomePage> {
     if (user == null) {
       return Stream.empty();
     }
+
+    // Ensure _firstDayOfWeek and _lastDayOfWeek cover the whole days
+    DateTime startOfDay =
+        DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day);
+    DateTime endOfDay = DateTime(
+        _selectedDate.year, _selectedDate.month, _selectedDate.day, 23, 59, 59);
+
     return FirebaseFirestore.instance
         .collection('Users')
         .doc(user.uid)
         .collection('Expenses')
-        .where('date',
-            isGreaterThanOrEqualTo: Timestamp.fromDate(_firstDayOfWeek))
-        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(_lastDayOfWeek))
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startOfDay))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endOfDay))
         .snapshots();
   }
 
@@ -513,6 +567,84 @@ class _HomePageState extends State<HomePage> {
       final expense = doc.data() as Map<String, dynamic>;
       return total + (expense['amount'] as double? ?? 0);
     });
+  }
+
+  int calculateInitialIndex() {
+    DateTime now = DateTime.now();
+    int weekdayIndex =
+        now.weekday - 1; // Monday is 1 in DateTime, but we need 0-index
+    return weekdayIndex;
+  }
+
+  Future<void> checkAndRefreshBudget() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      print("User not logged in.");
+      return;
+    }
+
+    final firestore = FirebaseFirestore.instance;
+    final now = DateTime.now();
+    final currentMonthYear =
+        "${now.year}-${now.month.toString().padLeft(2, '0')}";
+
+    // Attempt to retrieve the current month's budget.
+    final currentBudgetDoc = await firestore
+        .collection('Users')
+        .doc(user.uid)
+        .collection('Budgets')
+        .doc(currentMonthYear)
+        .get();
+
+    if (!currentBudgetDoc.exists) {
+      // If the current month's budget doesn't exist, fetch the previous month's budget.
+      final previousMonthYear = now.month == 1
+          ? "${now.year - 1}-12"
+          : "${now.year}-${(now.month - 1).toString().padLeft(2, '0')}";
+
+      final previousBudgetDoc = await firestore
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Budgets')
+          .doc(previousMonthYear)
+          .get();
+
+      Map<String, dynamic> newBudgetData;
+      if (previousBudgetDoc.exists) {
+        // Use the previous month's budget as a template for the current month.
+        newBudgetData = previousBudgetDoc.data()!;
+      } else {
+        // If there's no previous month's budget, use default values.
+        newBudgetData = {
+          'categoryBudgets': {}, // Default values for categories
+          'monthlyIncome': 0.0,
+          'savings': 0.0,
+          'totalBudget': 0.0,
+        };
+      }
+
+      // Create the current month's budget with either the previous month's data or default values.
+      await firestore
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Budgets')
+          .doc(currentMonthYear)
+          .set(newBudgetData);
+
+      // Optionally, refresh Preferences (Settings) to align with the new budget.
+      // This step depends on whether you want the user's preferences to automatically update with the new budget.
+      await firestore
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Preferences')
+          .doc('Settings')
+          .set({
+        'totalBudget': newBudgetData['totalBudget'],
+        'monthlyIncome': newBudgetData['monthlyIncome'],
+        'savings': newBudgetData['savings'],
+        'categoryBudgets': newBudgetData['categoryBudgets'],
+      }, SetOptions(merge: true));
+    }
   }
 
   @override
@@ -548,38 +680,139 @@ class _HomePageState extends State<HomePage> {
                   shrinkWrap: false,
                   children: [
                     budgetOverview(),
-                    Padding(
-                      padding: EdgeInsets.fromLTRB(15, 20, 20, 15),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            "Expense Overview",
-                            style: TextStyle(
-                                color: Colors.grey[700],
-                                fontSize: 18,
-                                fontWeight: FontWeight.w600),
-                          ),
-                          GestureDetector(
-                            onTap: () {
-                              Navigator.of(context).push(MaterialPageRoute(
-                                  builder: ((context) =>
-                                      ExpenseOverviewPage())));
-                            },
-                            child: Row(
-                              children: [
-                                Text(
-                                  "See more",
-                                  style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontWeight: FontWeight.w500),
+                    SizedBox(
+                      height: 10,
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        Column(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) =>
+                                          ExpenseOverviewPage()),
+                                );
+                              },
+                              child: Container(
+                                width: 150,
+                                height: 65,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                decoration: ShapeDecoration(
+                                  color: Color(0xFFF06767),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(27),
+                                  ),
                                 ),
-                                Icon(Icons.arrow_forward_ios, size: 12),
-                              ],
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 25,
+                                      height: 25,
+                                      clipBehavior: Clip.antiAlias,
+                                      decoration: BoxDecoration(),
+                                      child: Stack(
+                                        children: [
+                                          Icon(Icons.monetization_on,
+                                              color: Colors.black),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: 80,
+                                      height: 60,
+                                      child: Container(
+                                        padding: EdgeInsets.only(top: 5.0),
+                                        child: Text(
+                                          'Expense Overview',
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 16,
+                                            fontFamily: 'CourierPrime',
+                                            fontWeight: FontWeight.bold,
+                                            height: 0,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
+                          ],
+                        ),
+                        Column(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                      builder: (context) =>
+                                          const SmartBudgetPage()),
+                                );
+                              },
+                              child: Container(
+                                width: 150,
+                                height: 65,
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 10),
+                                decoration: ShapeDecoration(
+                                  color: Color(0xFF35B1EF),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(27),
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  mainAxisAlignment: MainAxisAlignment.start,
+                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                  children: [
+                                    Container(
+                                      width: 25,
+                                      height: 25,
+                                      clipBehavior: Clip.antiAlias,
+                                      decoration: BoxDecoration(),
+                                      child: Stack(
+                                        children: [
+                                          Icon(Icons.trending_up,
+                                              color: Colors.black),
+                                        ],
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    SizedBox(
+                                      width: 75,
+                                      height: 60,
+                                      child: Container(
+                                        padding: EdgeInsets.only(top: 5.0),
+                                        child: Text(
+                                          'Set Budget',
+                                          style: TextStyle(
+                                            color: Colors.black,
+                                            fontSize: 16,
+                                            fontFamily: 'CourierPrime',
+                                            fontWeight: FontWeight.bold,
+                                            height: 0,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                     StreamBuilder<QuerySnapshot>(
                       stream:
@@ -593,13 +826,6 @@ class _HomePageState extends State<HomePage> {
                               doc.data() as Map<String, dynamic>;
                           return previousValue + (expense['amount'] as num);
                         });
-
-                        final format = NumberFormat.currency(
-                            locale: 'en_US',
-                            symbol: '\$'); // Adjust locale and symbol as needed
-                        String formattedTotalLastWeek =
-                            format.format(totalLastWeek);
-
                         return GestureDetector(
                           onTap: () {
                             Navigator.of(context).push(MaterialPageRoute(
@@ -612,21 +838,22 @@ class _HomePageState extends State<HomePage> {
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  "Last Week's Expenses",
+                                  "Recent Transactions",
                                   style: TextStyle(
-                                      color: Colors.grey[700],
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600),
+                                      color: Colors.white,
+                                      fontFamily: "CourierPrime",
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold),
                                 ),
                                 Row(
                                   children: [
                                     Text(
-                                      formattedTotalLastWeek,
+                                      "View All",
                                       style: TextStyle(
-                                          color: Colors.grey[700],
-                                          fontWeight: FontWeight.w500),
+                                          color: Colors.white,
+                                          fontFamily: "CourierPrime",
+                                          fontWeight: FontWeight.w400),
                                     ),
-                                    Icon(Icons.arrow_forward_ios, size: 12),
                                   ],
                                 ),
                               ],
@@ -639,9 +866,11 @@ class _HomePageState extends State<HomePage> {
                       onDateSelected: (selectedDate) {
                         setState(() {
                           _selectedDate = selectedDate;
-                          _updateWeekRange(); // Update the week range based on the newly selected date
+                          _updateWeekRange(); // Recalculate weekly range
                         });
                       },
+                      initialSelectedIndex:
+                          calculateInitialIndex(), // Pass the initial index
                     ),
                     StreamBuilder<QuerySnapshot>(
                       stream: _getWeeklyExpenses(),
@@ -659,7 +888,12 @@ class _HomePageState extends State<HomePage> {
                         if (expenses.isEmpty) {
                           return Padding(
                             padding: const EdgeInsets.all(16.0),
-                            child: Text('No expenses found for this day.'),
+                            child: Text(
+                              'No expenses found for this day.',
+                              style: TextStyle(
+                                  fontFamily: "CourierPrime",
+                                  fontWeight: FontWeight.bold),
+                            ),
                           );
                         }
 
@@ -687,10 +921,24 @@ class _HomePageState extends State<HomePage> {
                             return ListTile(
                               leading: Icon(icon,
                                   size: 40, color: Colors.greenAccent),
-                              title: Text(expense['description']),
-                              subtitle: Text(formattedAmount),
-                              trailing:
-                                  Text(DateFormat.MMMMEEEEd().format(date)),
+                              title: Text(
+                                expense['description'],
+                                style: TextStyle(
+                                    fontFamily: "CourierPrime",
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              subtitle: Text(
+                                formattedAmount,
+                                style: TextStyle(
+                                    fontFamily: "CourierPrime",
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              trailing: Text(
+                                DateFormat.MMMMEEEEd().format(date),
+                                style: TextStyle(
+                                    fontFamily: "CourierPrime",
+                                    fontWeight: FontWeight.bold),
+                              ),
                             );
                           },
                         );
@@ -704,549 +952,55 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // Widget budgetOverview() {
+  //   double budgetToTotalRatio =
+  //       totalBudget > 0 ? currentBudget / totalBudget : 0;
+  //   double expensesToTotalRatio =
+  //       totalBudget > 0 ? totalExpenses / totalBudget : 0;
+  //   double leftoverRatio = totalBudget > 0 ? leftover / totalBudget : 0;
+  //   String balanceText = '\$${leftover.toStringAsFixed(2)}';
+
+  //   print('Budget to Total Ratio: $budgetToTotalRatio');
+  //   print('Expenses to Total Ratio: $expensesToTotalRatio');
+  //   print('Leftover Ratio: $leftoverRatio');
+
+  //   return Container(
+  //     width: 310,
+  //     height: 338,
+  //     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+  //     decoration: BoxDecoration(
+  //       color: Color(0xFF222121),
+  //       borderRadius: BorderRadius.circular(16),
+  //     ),
+  //     child: Column(
+  //       mainAxisAlignment: MainAxisAlignment.center,
+  //       children: [
+  //         CustomPaint(
+  //           size: Size(200, 200), // Adjust the size as needed
+  //           painter: ProgressMeterPainter(
+  //             budgetRatio: budgetToTotalRatio,
+  //             expensesRatio: expensesToTotalRatio,
+  //             leftoverRatio: leftoverRatio,
+  //             balanceText: balanceText,
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
   Widget budgetOverview() {
-    // return Column(
-    //   children: [
-    //     Container(
-    //       width: 310,
-    //       height: 338,
-    //       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-    //       decoration: BoxDecoration(
-    //         color: Color(0xFF222121),
-    //         borderRadius: BorderRadius.circular(16),
-    //       ),
-    //       child: Column(
-    //         children: [
-    //           Text(
-    //             'Total Balance',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 10,
-    //             ),
-    //           ),
-    //           Text(
-    //             '\$${leftover.toStringAsFixed(2)}',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 24,
-    //             ),
-    //           ),
-    //           SizedBox(height: 10),
-    //           Text(
-    //             'Income',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 10,
-    //             ),
-    //           ),
-    //           Text(
-    //             '\$${monthlyIncome.toStringAsFixed(2)}',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 24,
-    //             ),
-    //           ),
-    //           SizedBox(height: 10),
-    //           Text(
-    //             'Expenses',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 10,
-    //             ),
-    //           ),
-    //           Text(
-    //             '\$${totalExpenses.toStringAsFixed(2)}',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 24,
-    //             ),
-    //           ),
-    //           SizedBox(height: 10),
-    //           Text(
-    //             'Leftover',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 10,
-    //             ),
-    //           ),
-    //           Text(
-    //             '\$${leftover.toStringAsFixed(2)}',
-    //             style: TextStyle(
-    //               color: Colors.white,
-    //               fontSize: 24,
-    //             ),
-    //           ),
-    //         ],
-    //       ),
-    //     ),
-    //   ],
-    // );
+    DateTime now = DateTime.now();
+    String monthYear = "${DateFormat.MMMM().format(now)} ${now.year}";
+    double budgetToTotalRatio =
+        totalBudget > 0 ? currentBudget / totalBudget : 0;
+    double expensesToTotalRatio =
+        totalBudget > 0 ? totalExpenses / totalBudget : 0;
+    double leftoverRatio = totalBudget > 0 ? leftover / totalBudget : 0;
+    String balanceText = '\$${leftover.toStringAsFixed(2)}';
 
-    // UI attempt 1
-    // return Column(
-    //   children: [
-    //     Container(
-    //       width: 130,
-    //       height: 400,
-    //       child: Row(
-    //         mainAxisSize: MainAxisSize.min,
-    //         mainAxisAlignment: MainAxisAlignment.start,
-    //         crossAxisAlignment: CrossAxisAlignment.end,
-    //         children: [
-    //           Container(
-    //             padding:
-    //                 const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-    //             clipBehavior: Clip.antiAlias,
-    //             decoration: ShapeDecoration(
-    //               color: Color(0xFF222121),
-    //               shape: RoundedRectangleBorder(
-    //                 borderRadius: BorderRadius.circular(16),
-    //               ),
-    //             ),
-    //             child: Column(
-    //               mainAxisSize: MainAxisSize.min,
-    //               mainAxisAlignment: MainAxisAlignment.start,
-    //               crossAxisAlignment: CrossAxisAlignment.center,
-    //               children: [
-    //                 Container(
-    //                   child: Column(
-    //                     mainAxisSize: MainAxisSize.min,
-    //                     mainAxisAlignment: MainAxisAlignment.start,
-    //                     crossAxisAlignment: CrossAxisAlignment.start,
-    //                     children: [
-    //                       Container(
-    //                         padding: const EdgeInsets.symmetric(
-    //                             horizontal: 5, vertical: 3),
-    //                         clipBehavior: Clip.antiAlias,
-    //                         decoration: ShapeDecoration(
-    //                           color: Color(0xFF67F0AD),
-    //                           shape: RoundedRectangleBorder(
-    //                             borderRadius: BorderRadius.circular(90.50),
-    //                           ),
-    //                         ),
-    //                         child: Row(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.start,
-    //                           children: [
-    //                             Container(
-    //                               width: 95,
-    //                               height: 95,
-    //                               decoration: ShapeDecoration(
-    //                                 color: Color(0xFFF06767),
-    //                                 shape: RoundedRectangleBorder(
-    //                                   borderRadius: BorderRadius.circular(87),
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                             const SizedBox(width: 10),
-    //                             Container(
-    //                               width: 80,
-    //                               height: 80,
-    //                               decoration: ShapeDecoration(
-    //                                 color: Color(0xFFB7BA2A),
-    //                                 shape: RoundedRectangleBorder(
-    //                                   borderRadius:
-    //                                       BorderRadius.circular(81.50),
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                             const SizedBox(width: 10),
-    //                             Container(
-    //                               width: 60,
-    //                               height: 75,
-    //                               decoration: ShapeDecoration(
-    //                                 color: Color(0xFF2E2E2E),
-    //                                 shape: RoundedRectangleBorder(
-    //                                   borderRadius: BorderRadius.circular(76),
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                       const SizedBox(height: 10),
-    //                       Container(
-    //                         child: Column(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.center,
-    //                           children: [
-    //                             SizedBox(
-    //                               width: 79,
-    //                               height: 8,
-    //                               child: Text(
-    //                                 'Total Balance',
-    //                                 textAlign: TextAlign.center,
-    //                                 style: TextStyle(
-    //                                   color: Colors.white,
-    //                                   fontSize: 10,
-    //                                   fontFamily: 'Cutive Mono',
-    //                                   fontWeight: FontWeight.w400,
-    //                                   height: 0,
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                             Text(
-    //                               '\$2,786.05',
-    //                               textAlign: TextAlign.center,
-    //                               style: TextStyle(
-    //                                 color: Colors.white,
-    //                                 fontSize: 24,
-    //                                 fontFamily: 'Dangrek',
-    //                                 fontWeight: FontWeight.w400,
-    //                                 height: 0,
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                     ],
-    //                   ),
-    //                 ),
-    //                 const SizedBox(height: 27),
-    //                 Container(
-    //                   child: Column(
-    //                     mainAxisSize: MainAxisSize.min,
-    //                     mainAxisAlignment: MainAxisAlignment.start,
-    //                     crossAxisAlignment: CrossAxisAlignment.start,
-    //                     children: [
-    //                       Container(
-    //                         child: Row(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.end,
-    //                           children: [
-    //                             Container(
-    //                               child: Row(
-    //                                 mainAxisSize: MainAxisSize.min,
-    //                                 mainAxisAlignment: MainAxisAlignment.start,
-    //                                 crossAxisAlignment:
-    //                                     CrossAxisAlignment.center,
-    //                                 children: [
-    //                                   Text(
-    //                                     'Income',
-    //                                     textAlign: TextAlign.center,
-    //                                     style: TextStyle(
-    //                                       color: Colors.white,
-    //                                       fontSize: 10,
-    //                                       fontFamily: 'Cutive Mono',
-    //                                       fontWeight: FontWeight.w400,
-    //                                       height: 0,
-    //                                     ),
-    //                                   ),
-    //                                   const SizedBox(width: 14),
-    //                                   Container(
-    //                                     width: 50,
-    //                                     height: 5,
-    //                                     decoration: ShapeDecoration(
-    //                                       color: Color(0xFF67F0AD),
-    //                                       shape: RoundedRectangleBorder(
-    //                                         borderRadius:
-    //                                             BorderRadius.circular(50),
-    //                                       ),
-    //                                     ),
-    //                                   ),
-    //                                 ],
-    //                               ),
-    //                             ),
-    //                             const SizedBox(width: 6),
-    //                             SizedBox(
-    //                               width: 50,
-    //                               height: 9,
-    //                               child: Text(
-    //                                 '\$3000.00',
-    //                                 textAlign: TextAlign.center,
-    //                                 style: TextStyle(
-    //                                   color: Colors.white,
-    //                                   fontSize: 10,
-    //                                   fontFamily: 'Cutive Mono',
-    //                                   fontWeight: FontWeight.w400,
-    //                                   height: 0,
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                       const SizedBox(height: 7),
-    //                       Container(
-    //                         child: Row(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.center,
-    //                           children: [
-    //                             Container(
-    //                               child: Row(
-    //                                 mainAxisSize: MainAxisSize.min,
-    //                                 mainAxisAlignment: MainAxisAlignment.start,
-    //                                 crossAxisAlignment:
-    //                                     CrossAxisAlignment.center,
-    //                                 children: [
-    //                                   Text(
-    //                                     'Expenses',
-    //                                     textAlign: TextAlign.center,
-    //                                     style: TextStyle(
-    //                                       color: Colors.white,
-    //                                       fontSize: 10,
-    //                                       fontFamily: 'Cutive Mono',
-    //                                       fontWeight: FontWeight.w400,
-    //                                       height: 0,
-    //                                     ),
-    //                                   ),
-    //                                   const SizedBox(width: 8),
-    //                                   Container(
-    //                                     width: 34,
-    //                                     height: 5,
-    //                                     decoration: ShapeDecoration(
-    //                                       color: Color(0xFFF06767),
-    //                                       shape: RoundedRectangleBorder(
-    //                                         borderRadius:
-    //                                             BorderRadius.circular(50),
-    //                                       ),
-    //                                     ),
-    //                                   ),
-    //                                 ],
-    //                               ),
-    //                             ),
-    //                             const SizedBox(width: 137),
-    //                             SizedBox(
-    //                               width: 50,
-    //                               height: 9,
-    //                               child: Text(
-    //                                 '\$213.95',
-    //                                 textAlign: TextAlign.center,
-    //                                 style: TextStyle(
-    //                                   color: Colors.white,
-    //                                   fontSize: 10,
-    //                                   fontFamily: 'Cutive Mono',
-    //                                   fontWeight: FontWeight.w400,
-    //                                   height: 0,
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                       const SizedBox(height: 7),
-    //                       Container(
-    //                         child: Row(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.center,
-    //                           children: [
-    //                             Container(
-    //                               child: Row(
-    //                                 mainAxisSize: MainAxisSize.min,
-    //                                 mainAxisAlignment: MainAxisAlignment.start,
-    //                                 crossAxisAlignment:
-    //                                     CrossAxisAlignment.center,
-    //                                 children: [
-    //                                   Text(
-    //                                     'Leftover',
-    //                                     textAlign: TextAlign.center,
-    //                                     style: TextStyle(
-    //                                       color: Colors.white,
-    //                                       fontSize: 10,
-    //                                       fontFamily: 'Cutive Mono',
-    //                                       fontWeight: FontWeight.w400,
-    //                                       height: 0,
-    //                                     ),
-    //                                   ),
-    //                                   const SizedBox(width: 8),
-    //                                   Container(
-    //                                     width: 131,
-    //                                     height: 5,
-    //                                     decoration: ShapeDecoration(
-    //                                       color: Color(0xFFB7BA2A),
-    //                                       shape: RoundedRectangleBorder(
-    //                                         borderRadius:
-    //                                             BorderRadius.circular(50),
-    //                                       ),
-    //                                     ),
-    //                                   ),
-    //                                 ],
-    //                               ),
-    //                             ),
-    //                             const SizedBox(width: 42),
-    //                             SizedBox(
-    //                               width: 52,
-    //                               height: 9,
-    //                               child: Text(
-    //                                 '\$2786.05',
-    //                                 textAlign: TextAlign.center,
-    //                                 style: TextStyle(
-    //                                   color: Colors.white,
-    //                                   fontSize: 10,
-    //                                   fontFamily: 'Cutive Mono',
-    //                                   fontWeight: FontWeight.w400,
-    //                                   height: 0,
-    //                                 ),
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                     ],
-    //                   ),
-    //                 ),
-    //               ],
-    //             ),
-    //           ),
-    //           const SizedBox(width: 31),
-    //           Container(
-    //             padding:
-    //                 const EdgeInsets.symmetric(horizontal: 18, vertical: 7),
-    //             clipBehavior: Clip.antiAlias,
-    //             decoration: ShapeDecoration(
-    //               color: Color(0xFF35B1EF),
-    //               shape: RoundedRectangleBorder(
-    //                 borderRadius: BorderRadius.circular(27),
-    //               ),
-    //             ),
-    //             child: Column(
-    //               mainAxisSize: MainAxisSize.min,
-    //               mainAxisAlignment: MainAxisAlignment.start,
-    //               crossAxisAlignment: CrossAxisAlignment.start,
-    //               children: [
-    //                 Container(
-    //                   width: 101,
-    //                   height: 40,
-    //                   child: Row(
-    //                     mainAxisSize: MainAxisSize.min,
-    //                     mainAxisAlignment: MainAxisAlignment.start,
-    //                     crossAxisAlignment: CrossAxisAlignment.center,
-    //                     children: [
-    //                       Container(
-    //                         padding: const EdgeInsets.all(10),
-    //                         child: Row(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.start,
-    //                           children: [
-    //                             Container(
-    //                               padding: const EdgeInsets.all(2),
-    //                               clipBehavior: Clip.antiAlias,
-    //                               decoration: BoxDecoration(),
-    //                               child: Row(
-    //                                 mainAxisSize: MainAxisSize.min,
-    //                                 mainAxisAlignment: MainAxisAlignment.start,
-    //                                 crossAxisAlignment:
-    //                                     CrossAxisAlignment.start,
-    //                                 children: [
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                   const SizedBox(width: 10),
-    //                                 ],
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                       Container(
-    //                         padding: const EdgeInsets.all(10),
-    //                         child: Column(
-    //                           mainAxisSize: MainAxisSize.min,
-    //                           mainAxisAlignment: MainAxisAlignment.start,
-    //                           crossAxisAlignment: CrossAxisAlignment.start,
-    //                           children: [
-    //                             Container(
-    //                               padding: const EdgeInsets.all(10),
-    //                               child: Row(
-    //                                 mainAxisSize: MainAxisSize.min,
-    //                                 mainAxisAlignment: MainAxisAlignment.center,
-    //                                 crossAxisAlignment:
-    //                                     CrossAxisAlignment.center,
-    //                                 children: [
-    //                                   Text(
-    //                                     'Set \nBudget',
-    //                                     style: TextStyle(
-    //                                       color: Colors.black,
-    //                                       fontSize: 10,
-    //                                       fontFamily: 'Courier Prime',
-    //                                       fontWeight: FontWeight.w400,
-    //                                       height: 0,
-    //                                     ),
-    //                                   ),
-    //                                 ],
-    //                               ),
-    //                             ),
-    //                           ],
-    //                         ),
-    //                       ),
-    //                     ],
-    //                   ),
-    //                 ),
-    //               ],
-    //             ),
-    //           ),
-    //           const SizedBox(width: 31),
-    //           Container(
-    //             width: 141,
-    //             height: 54,
-    //             child: Stack(
-    //               children: [
-    //                 Positioned(
-    //                   left: 0,
-    //                   top: 0,
-    //                   child: Container(
-    //                     width: 141,
-    //                     height: 54,
-    //                     decoration: ShapeDecoration(
-    //                       color: Color(0xFFF06767),
-    //                       shape: RoundedRectangleBorder(
-    //                         borderRadius: BorderRadius.circular(27),
-    //                       ),
-    //                     ),
-    //                   ),
-    //                 ),
-    //                 Positioned(
-    //                   left: 58,
-    //                   top: 17,
-    //                   child: SizedBox(
-    //                     width: 74,
-    //                     child: Text(
-    //                       'Expenses overview',
-    //                       style: TextStyle(
-    //                         color: Colors.black,
-    //                         fontSize: 10,
-    //                         fontFamily: 'Courier Prime',
-    //                         fontWeight: FontWeight.w400,
-    //                         height: 0,
-    //                       ),
-    //                     ),
-    //                   ),
-    //                 ),
-    //                 Positioned(
-    //                   left: 19,
-    //                   top: 15,
-    //                   child: Container(
-    //                     width: 26,
-    //                     height: 26,
-    //                     clipBehavior: Clip.antiAlias,
-    //                     decoration: BoxDecoration(),
-    //                     child: Stack(children: []),
-    //                   ),
-    //                 ),
-    //               ],
-    //             ),
-    //           ),
-    //         ],
-    //       ),
-    //     ),
-    //   ],
-    // );
-
-    //attempt 2
     return Container(
       width: 310,
-      height: 338,
+      height: 425, // Increased height to accommodate additional elements
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
         color: Color(0xFF222121),
@@ -1255,92 +1009,240 @@ class _HomePageState extends State<HomePage> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          Text(monthYear,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                  fontFamily: "CourierPrime")), // Month and Year
+          SizedBox(height: 100),
           CustomPaint(
-            size: Size(200, 200), // You can change the size as needed
+            size: Size(MediaQuery.of(context).size.width, 200), // Updated size
             painter: ProgressMeterPainter(
-              income: 1500,
-              expenses: 300,
-              leftover: 1200,
+              budgetRatio: budgetToTotalRatio,
+              expensesRatio: expensesToTotalRatio,
+              leftoverRatio: leftoverRatio,
+              totalBudget: totalBudget,
+              totalExpenses: totalExpenses,
+              leftover: leftover,
+              balanceText: balanceText,
             ),
           ),
-          Text(
-            'Total Balance',
-            style: TextStyle(color: Colors.white, fontSize: 10),
-          ),
-          Text(
-            '\$"1300"',
-            style: TextStyle(color: Colors.white, fontSize: 24),
-          ),
-          // Add other text fields and styling for Income, Expenses, Leftover
         ],
       ),
     );
   }
+
+// Helper method to build a power bar for budget, expenses, and leftover
+  Widget buildPowerBar(String label, double ratio, double value) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      children: [
+        Text(label, style: TextStyle(color: Colors.white)),
+        Container(
+          width: 100 * ratio, // Assuming max width of 100 for simplicity
+          height: 10,
+          color: label == "Budget"
+              ? Color.fromARGB(255, 103, 240, 173)
+              : label == "Expenses"
+                  ? Color.fromARGB(255, 240, 103, 103)
+                  : Color.fromARGB(255, 183, 186, 42),
+        ),
+        Text('\$${value.toStringAsFixed(2)}',
+            style: TextStyle(color: Colors.white)),
+      ],
+    );
+  }
 }
 
+// class ProgressMeterPainter extends CustomPainter {
+//   final double budgetRatio;
+//   final double expensesRatio;
+//   final double leftoverRatio;
+//   final String balanceText;
+
+//   ProgressMeterPainter({
+//     required this.budgetRatio,
+//     required this.expensesRatio,
+//     required this.leftoverRatio,
+//     required this.balanceText,
+//   });
+
+//   @override
+//   void paint(Canvas canvas, Size size) {
+//     double strokeWidth = 12;
+//     double startAngle = -math.pi / 2;
+//     Offset center = Offset(size.width / 2, size.height / 2);
+//     double radius = size.width / 2;
+
+//     // Adjust each Paint object to have rounded stroke caps
+//     final Paint budgetPaint = Paint()
+//       ..strokeWidth = strokeWidth
+//       ..color = Color.fromARGB(255, 103, 240, 173) // Budget color
+//       ..strokeCap = StrokeCap.round // Rounded ends
+//       ..style = PaintingStyle.stroke;
+
+//     final Paint expensesPaint = Paint()
+//       ..strokeWidth = strokeWidth
+//       ..color = Color.fromARGB(255, 240, 103, 103) // Expenses color
+//       ..strokeCap = StrokeCap.round // Rounded ends
+//       ..style = PaintingStyle.stroke;
+
+//     final Paint leftoverPaint = Paint()
+//       ..strokeWidth = strokeWidth
+//       ..color = Color.fromARGB(255, 183, 186, 42) // Leftover color
+//       ..strokeCap = StrokeCap.round // Rounded ends
+//       ..style = PaintingStyle.stroke;
+
+//     // Calculate the sweep angles based on ratios
+//     double budgetSweep = 2 * math.pi * budgetRatio;
+//     double expensesSweep = 2 * math.pi * expensesRatio;
+//     double leftoverSweep = 2 * math.pi * leftoverRatio;
+
+//     // Draw the arcs with the updated paint objects
+//     canvas.drawArc(Rect.fromCircle(center: center, radius: radius), startAngle,
+//         budgetSweep, false, budgetPaint);
+//     canvas.drawArc(
+//         Rect.fromCircle(center: center, radius: radius - strokeWidth),
+//         startAngle,
+//         expensesSweep,
+//         false,
+//         expensesPaint);
+//     canvas.drawArc(
+//         Rect.fromCircle(center: center, radius: radius - 2 * strokeWidth),
+//         startAngle,
+//         leftoverSweep,
+//         false,
+//         leftoverPaint);
+
+//     // Drawing the balance text remains unchanged
+//     final textSpan = TextSpan(
+//       text: balanceText,
+//       style: TextStyle(
+//           color: Colors.white, fontSize: 24, fontFamily: "CourierPrime"),
+//     );
+//     final textPainter =
+//         TextPainter(text: textSpan, textDirection: ui.TextDirection.ltr);
+//     textPainter.layout(minWidth: 0, maxWidth: size.width);
+//     final xCenter = (size.width - textPainter.width) * 0.5;
+//     final yCenter = (size.height - textPainter.height) * 0.5;
+//     textPainter.paint(canvas, Offset(xCenter, yCenter));
+//   }
+
+//   @override
+//   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+// }
+
 class ProgressMeterPainter extends CustomPainter {
-  final double income;
-  final double expenses;
+  final double budgetRatio;
+  final double expensesRatio;
+  final double leftoverRatio;
+  final double totalBudget;
+  final double totalExpenses;
   final double leftover;
+  final String balanceText;
 
   ProgressMeterPainter({
-    required this.income,
-    required this.expenses,
+    required this.budgetRatio,
+    required this.expensesRatio,
+    required this.leftoverRatio,
+    required this.totalBudget,
+    required this.totalExpenses,
     required this.leftover,
+    required this.balanceText,
   });
 
   @override
   void paint(Canvas canvas, Size size) {
-    double strokeWidth = 15;
-    double startAngle = -math.pi / 2;
-    double total = income + expenses + leftover;
-    Offset center = Offset(size.width / 2, size.height / 2);
-    double radius = size.width / 2;
+    final double strokeWidth = 12;
+    final Offset center = Offset(size.width / 2, size.height / 8);
+    final double radius = size.width / 3.75; // Smaller radius
 
-    // Draw income
-    final incomePaint = Paint()
+    // Draw circular arcs
+    _drawCircularArc(canvas, center, radius, strokeWidth, budgetRatio,
+        Color.fromARGB(255, 103, 240, 173));
+    _drawCircularArc(canvas, center, radius - strokeWidth, strokeWidth,
+        expensesRatio, Color.fromARGB(255, 240, 103, 103));
+    _drawCircularArc(canvas, center, radius - 2 * strokeWidth, strokeWidth,
+        leftoverRatio, Color.fromARGB(255, 183, 186, 42));
+
+    // Draw power bars
+    double startY = center.dy + radius + 40; // Start below the circular arcs
+    _drawPowerBar(canvas, size, startY, 'Budget', budgetRatio, totalBudget,
+        Color.fromARGB(255, 103, 240, 173));
+    _drawPowerBar(canvas, size, startY += 30, 'Expenses', expensesRatio,
+        totalExpenses, Color.fromARGB(255, 240, 103, 103));
+    _drawPowerBar(canvas, size, startY += 30, 'Leftover', leftoverRatio,
+        leftover, Color.fromARGB(255, 183, 186, 42));
+
+    // Draw total balance text at the top
+    _drawBalanceText(canvas, size, balanceText);
+  }
+
+  void _drawCircularArc(Canvas canvas, Offset center, double radius,
+      double strokeWidth, double ratio, Color color) {
+    final Paint paint = Paint()
       ..strokeWidth = strokeWidth
-      ..color = Color.fromARGB(255, 103, 240, 173)
+      ..color = color
+      ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
 
-    double incomeSweep = 2 * math.pi * (income);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
-      startAngle,
-      incomeSweep,
-      false,
-      incomePaint,
-    );
+    final double sweepAngle = 2 * math.pi * ratio;
+    canvas.drawArc(Rect.fromCircle(center: center, radius: radius),
+        -math.pi / 2, sweepAngle, false, paint);
+  }
 
-    // Draw expenses
-    final expensesPaint = Paint()
-      ..strokeWidth = strokeWidth
-      ..color = Color.fromARGB(255, 240, 103, 103)
-      ..style = PaintingStyle.stroke;
+  void _drawPowerBar(Canvas canvas, Size size, double y, String label,
+      double ratio, double value, Color color) {
+    final Paint paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
 
-    double expensesSweep = 2 * math.pi * (expenses);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius - strokeWidth),
-      startAngle,
-      expensesSweep,
-      false,
-      expensesPaint,
-    );
+    const double barHeight = 10;
+    final double maxBarWidth = size.width - 160; // Adjust for padding
+    final double barWidth = maxBarWidth * ratio;
+    final Offset barStart = Offset(80, y); // Starting point of the bar
 
-    // Draw leftover
-    final leftoverPaint = Paint()
-      ..strokeWidth = strokeWidth
-      ..color = Color.fromARGB(255, 183, 186, 42)
-      ..style = PaintingStyle.stroke;
+    // Draw the label
+    _drawText(canvas, label, barStart.translate(-80, -8), TextAlign.right);
 
-    double leftoverSweep = 2 * math.pi * (leftover);
-    canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius - 2 * strokeWidth),
-      startAngle,
-      leftoverSweep,
-      false,
-      leftoverPaint,
-    );
+    // Draw the rounded bar
+    RRect bar = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+            barStart.dx, barStart.dy - barHeight / 2, barWidth, barHeight),
+        Radius.circular(barHeight / 2));
+    canvas.drawRRect(bar, paint);
+
+    // Draw the value
+    _drawText(canvas, '\$${value.toStringAsFixed(2)}',
+        barStart.translate(barWidth + 10, -8), TextAlign.left);
+  }
+
+  void _drawText(Canvas canvas, String text, Offset position, TextAlign align) {
+    final TextSpan span = TextSpan(
+        style: TextStyle(
+            color: Colors.white, fontSize: 14, fontFamily: "CourierPrime"),
+        text: text);
+    final TextPainter tp = TextPainter(
+        text: span, textAlign: align, textDirection: ui.TextDirection.ltr);
+    tp.layout();
+    tp.paint(canvas, position);
+  }
+
+  void _drawBalanceText(Canvas canvas, Size size, String balanceText) {
+    final TextSpan span = TextSpan(
+        style: TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontFamily: "CourierPrime",
+            fontWeight: FontWeight.bold),
+        text: 'Total Balance\n$balanceText');
+    final TextPainter tp = TextPainter(
+        text: span,
+        textAlign: TextAlign.center,
+        textDirection: ui.TextDirection.ltr);
+    tp.layout(maxWidth: size.width);
+    tp.paint(canvas, Offset((size.width - tp.width) / 2, 10));
   }
 
   @override
@@ -1374,20 +1276,23 @@ Widget _buildOverviewCard(String title, String value) {
 // Make necessary modifications based on your actual CalendarWeeklyView implementation
 class CalendarWeeklyView extends StatefulWidget {
   final Function(DateTime) onDateSelected;
+  final int initialSelectedIndex;
 
-  CalendarWeeklyView({required this.onDateSelected});
+  CalendarWeeklyView(
+      {required this.onDateSelected, required this.initialSelectedIndex});
 
   @override
   State<CalendarWeeklyView> createState() => _CalendarWeeklyViewState();
 }
 
 class _CalendarWeeklyViewState extends State<CalendarWeeklyView> {
-  int? groupValue = 0;
+  late int groupValue;
   List<DateTime> dates = []; // This will hold your dates
 
   @override
   void initState() {
     super.initState();
+    groupValue = widget.initialSelectedIndex;
     _initDates();
   }
 
@@ -1409,6 +1314,7 @@ class _CalendarWeeklyViewState extends State<CalendarWeeklyView> {
           DateFormat.E().format(dates[index]), // Day abbreviation
           DateFormat.d().format(dates[index]), // Day number
           context,
+          index,
         );
       },
     );
@@ -1434,18 +1340,35 @@ class _CalendarWeeklyViewState extends State<CalendarWeeklyView> {
     );
   }
 
-  Widget buildSegment(String dateAbr, String datenumber, BuildContext context) {
+  Widget buildSegment(
+      String dateAbr, String datenumber, BuildContext context, int index) {
+    // Determine if this segment is selected
+    bool isSelected = groupValue == index;
+
     return SizedBox(
       height: MediaQuery.of(context).size.height * 0.075,
       width: MediaQuery.of(context).size.width * 0.9,
-      child:
-          Column(mainAxisAlignment: MainAxisAlignment.spaceEvenly, children: [
-        Text(
-          dateAbr,
-          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-        ),
-        Text(datenumber, style: TextStyle(fontSize: 14)),
-      ]),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        children: [
+          Text(
+            dateAbr,
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.black : Colors.white,
+                fontFamily: "CourierPrime"),
+          ),
+          Text(
+            datenumber,
+            style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: isSelected ? Colors.black : Colors.white,
+                fontFamily: "CourierPrime"),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1454,7 +1377,6 @@ class _CalendarWeeklyViewState extends State<CalendarWeeklyView> {
     return Column(
       children: [
         calendarBox(context), // This displays the segmented control calendar
-        // The VerticalList widget or equivalent logic to display expenses for the selected day should go here
       ],
     );
   }

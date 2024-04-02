@@ -133,35 +133,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _navigateToSignUpScreen() async {
     await Future.delayed(
-        const Duration(seconds: 2)); // Adjust the delay as needed
+        const Duration(seconds: 3)); // Adjust the delay as needed
     if (!mounted) return;
-    Navigator.pushReplacementNamed(
-        context,
-        SignUpScreen
-            .id); // Use pushReplacementNamed to prevent going back to the home screen
+    Navigator.pushReplacementNamed(context, SignUpScreen.id);
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Color(0xFF2E2E2E), // Changed background color to #2E2E2E
+      backgroundColor: Color(0xFF2E2E2E),
       body: SafeArea(
         child: Center(
-          // Added Center widget to center everything on the screen
           child: Column(
-            mainAxisAlignment:
-                MainAxisAlignment.center, // Center content vertically
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              SizedBox(
-                width: double.infinity, // Take the full width
-                child: Text(
-                  'Scan & Save',
-                  textAlign: TextAlign.center, // Center text horizontally
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 40,
-                    fontFamily: 'DotGothic16',
-                    fontWeight: FontWeight.w400,
+              Hero(
+                tag: 'scanAndSave',
+                child: Material(
+                  color: Colors.transparent, // Needed for text within Hero
+                  child: Text(
+                    'Scan & Save',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 40,
+                      fontFamily: 'DotGothic16',
+                      fontWeight: FontWeight.w400,
+                    ),
                   ),
                 ),
               ),

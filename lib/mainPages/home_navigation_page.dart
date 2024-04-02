@@ -5,6 +5,7 @@ import 'UpcomingTransactionsPage.dart';
 import 'AccountPage.dart'; // Adjust the import path
 import 'package:demo_flutter/add_expense_options.dart';
 import 'SmartBudgetPage.dart';
+import 'package:demo_flutter/expense_analysis.dart';
 import 'package:demo_flutter/expense_overview_page.dart';
 
 class HomeNavigationPage extends StatefulWidget {
@@ -25,7 +26,8 @@ class _HomeNavigationPageState extends State<HomeNavigationPage> {
     const HomePage(),
     const PastTransactionsPage(),
     const SmartBudgetPage(),
-    const AccountPage(),
+    // const AccountPage(),
+    ExpenseAnalysisPage(),
   ];
 
   @override

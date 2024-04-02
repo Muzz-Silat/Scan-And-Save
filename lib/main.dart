@@ -164,6 +164,7 @@ import 'package:demo_flutter/add_expense_page.dart';
 import 'package:demo_flutter/mainPages/home_navigation_page.dart';
 import 'package:demo_flutter/add_expense_options.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'theme_bloc.dart';
 import 'theme_state.dart';
@@ -178,58 +179,60 @@ void main() async {
               messagingSenderId: "790734238609",
               projectId: "expensetracker-81336"))
       : await Firebase.initializeApp();
-  runApp(
-    BlocProvider(
-      create: (context) => ThemeBloc(),
-      child: const MyApp(),
-    ),
-  );
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    // Using BlocBuilder to listen for theme changes
-    return BlocBuilder<ThemeBloc, ThemeState>(
-      builder: (context, themeState) {
-        return MaterialApp(
-          theme: themeState.themeData, // Apply the theme from ThemeState
-          darkTheme: ThemeData(
-            brightness: Brightness.dark,
-            primaryColor: Colors.black,
-            scaffoldBackgroundColor: Colors.black,
-            appBarTheme: const AppBarTheme(
-              color: Colors.black,
-              iconTheme: IconThemeData(color: Colors.white),
+    return MaterialApp(
+      theme: ThemeData.dark().copyWith(
+        brightness: Brightness.dark,
+        floatingActionButtonTheme: const FloatingActionButtonThemeData(
+          backgroundColor: Colors.greenAccent,
+        ),
+        bottomNavigationBarTheme: const BottomNavigationBarThemeData(
+          selectedItemColor: Colors.greenAccent,
+        ),
+        appBarTheme: const AppBarTheme(
+          color: Colors.black,
+          iconTheme: IconThemeData(color: Colors.white),
+        ),
+        scaffoldBackgroundColor: const Color.fromARGB(255, 46, 46, 46),
+        textTheme: const TextTheme(
+          bodyMedium: TextStyle(color: Colors.white),
+        ),
+      ),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.active) {
+            // User is signed in
+            if (snapshot.hasData) {
+              return const HomeNavigationPage();
+            } else {
+              // User is not signed in
+              return const HomeScreen();
+            }
+          }
+          // Waiting for authentication to complete
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(),
             ),
-            bottomNavigationBarTheme: const BottomNavigationBarThemeData(
-              backgroundColor: Colors.black,
-              selectedItemColor: Colors.white,
-              unselectedItemColor: Colors.white70,
-            ),
-            floatingActionButtonTheme: const FloatingActionButtonThemeData(
-              backgroundColor: Colors.greenAccent,
-            ),
-            textTheme: const TextTheme(
-              bodyMedium: TextStyle(color: Colors.white),
-            ),
-          ),
-          themeMode: ThemeMode
-              .system, // You might want to control this with Bloc as well
-          initialRoute: HomeScreen.id,
-          routes: {
-            HomeScreen.id: (context) => const HomeScreen(),
-            LoginScreen.id: (context) => const LoginScreen(),
-            SignUpScreen.id: (context) => const SignUpScreen(),
-            WelcomeScreen.id: (context) => const WelcomeScreen(),
-            HomeNavigationPage.routeName: (context) =>
-                const HomeNavigationPage(),
-            AddExpensePage.routeName: (context) => const AddExpensePage(),
-            '/addExpenseOptions': (context) => AddExpenseOptionsPage(),
-          },
-        );
+          );
+        },
+      ),
+      routes: {
+        HomeScreen.id: (context) => const HomeScreen(),
+        LoginScreen.id: (context) => const LoginScreen(),
+        SignUpScreen.id: (context) => const SignUpScreen(),
+        HomeNavigationPage.routeName: (context) => const HomeNavigationPage(),
+        AddExpensePage.routeName: (context) => const AddExpensePage(),
+        '/addExpenseOptions': (context) => AddExpenseOptionsPage(),
+        // Add other routes here
       },
     );
   }

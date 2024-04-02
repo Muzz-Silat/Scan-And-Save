@@ -115,8 +115,9 @@ class _LoginScreenState extends State<LoginScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 20.0),
                           child: ElevatedButton(
                             style: ElevatedButton.styleFrom(
-                              primary: Color(0xFF67F0AD), // Background color
-                              onPrimary: Colors.black, // Text color
+                              backgroundColor:
+                                  Color(0xFF67F0AD), // Background color
+                              foregroundColor: Colors.black, // Text color
                               shape: RoundedRectangleBorder(
                                 borderRadius: BorderRadius.circular(33),
                               ),
@@ -175,10 +176,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             children: [
                               GestureDetector(
                                 onTap: () {
-                                  Navigator.pushNamed(
-                                      context,
-                                      SignUpScreen
-                                          .id); // Navigate to Sign Up screen
+                                  Navigator.pushNamed(context, SignUpScreen.id);
                                 },
                                 child: Text(
                                   "Sign Up",

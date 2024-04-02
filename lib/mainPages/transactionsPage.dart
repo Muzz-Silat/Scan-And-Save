@@ -131,6 +131,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:demo_flutter/firestore_service.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:demo_flutter/expense.dart';
 import 'package:demo_flutter/expense_overview_page.dart';
 
@@ -146,6 +147,10 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
   String sortType = 'Recent'; // Variable to track the current sort type
   String preferredCurrency = 'USD';
   bool isLoading = true;
+  DateTime _selectedDate = DateTime.now();
+  String _selectedFilter = 'all';
+  String? _selectedCategory;
+  List<DocumentSnapshot> _filteredExpenses = [];
   CurrencyService currencyService = CurrencyService();
   final FirestoreService _firestoreService = FirestoreService();
   List<String> currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AED'];
@@ -163,6 +168,101 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
   void initState() {
     super.initState();
     fetchPreferredCurrency();
+    _fetchExpenses();
+  }
+
+  void _fetchExpenses() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    DateTime now = DateTime.now();
+    DateTime startOfToday = DateTime(now.year, now.month, now.day);
+    DateTime endOfToday = DateTime(now.year, now.month, now.day, 23, 59, 59);
+
+    DateTime firstDayOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    DateTime lastDayOfWeek = firstDayOfWeek
+        .add(Duration(days: 6, hours: 23, minutes: 59, seconds: 59));
+
+    Query query = FirebaseFirestore.instance
+        .collection('Users')
+        .doc(user.uid)
+        .collection('Expenses');
+
+    if (_selectedFilter == 'today') {
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfToday)
+          .where('date', isLessThanOrEqualTo: endOfToday);
+    } else if (_selectedFilter == 'this_week') {
+      query = query
+          .where('date', isGreaterThanOrEqualTo: firstDayOfWeek)
+          .where('date', isLessThanOrEqualTo: lastDayOfWeek);
+    }
+    // For 'this_month'
+    else if (_selectedFilter == 'this_month') {
+      DateTime startOfMonth = DateTime(now.year, now.month, 1);
+      DateTime endOfMonth = DateTime(now.year, now.month + 1, 0, 23, 59, 59);
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfMonth)
+          .where('date', isLessThanOrEqualTo: endOfMonth);
+    }
+// For 'this_year'
+    else if (_selectedFilter == 'this_year') {
+      DateTime startOfYear = DateTime(now.year, 1, 1);
+      DateTime endOfYear = DateTime(now.year, 12, 31, 23, 59, 59);
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfYear)
+          .where('date', isLessThanOrEqualTo: endOfYear);
+    }
+// For 'all', you don't need to apply a date filter.
+    else if (_selectedFilter == 'all') {
+      // No additional filtering required for 'all'
+    }
+
+    // If a category is selected, further filter the query
+    if (_selectedCategory != null) {
+      query = query.where('category', isEqualTo: _selectedCategory);
+    }
+
+    // Fetch the data from Firestore and update the state
+    query.get().then((snapshot) {
+      setState(() {
+        _filteredExpenses = snapshot.docs;
+      });
+    });
+  }
+
+  // New method to update the time period filter and fetch expenses
+  void _onFilterChanged(String newFilter) {
+    setState(() {
+      _selectedFilter = newFilter;
+      _fetchExpenses(); // Fetch expenses after changing the filter
+    });
+  }
+
+  // New method to update the category filter and fetch expenses
+  void _onCategoryChanged(String? category) {
+    setState(() {
+      _selectedCategory = category;
+      _fetchExpenses(); // Fetch expenses after changing the category
+    });
+  }
+
+  // New method to pick a date and fetch expenses for that date
+  Future<void> _pickDate() async {
+    final DateTime? pickedDate = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2000),
+      lastDate: DateTime.now(),
+    );
+    if (pickedDate != null) {
+      setState(() {
+        _selectedDate = pickedDate;
+        _selectedFilter =
+            'custom'; // Set to 'custom' to indicate a specific date
+        _fetchExpenses(); // Fetch expenses after picking a date
+      });
+    }
   }
 
   Future<void> fetchPreferredCurrency() async {
@@ -216,11 +316,131 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
     return categorySums;
   }
 
+  // Common widget for all time filter buttons and the calendar button
+  Widget _filterButton(String title, IconData? iconData, String filter) {
+    bool isSelected = _selectedFilter == filter;
+    EdgeInsets padding = iconData == null
+        ? EdgeInsets.fromLTRB(12, 12, 12, 9)
+        : EdgeInsets.symmetric(vertical: 8, horizontal: 12);
+
+    return GestureDetector(
+      onTap: iconData == null ? () => _onFilterChanged(filter) : _pickDate,
+      child: Container(
+        padding: padding,
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.greenAccent : Colors.transparent,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(
+            color: isSelected
+                ? Theme.of(context).colorScheme.secondary
+                : Colors.transparent,
+          ),
+        ),
+        child: iconData == null
+            ? Text(
+                title,
+                style: TextStyle(
+                  fontFamily: "CourierPrime",
+                  color: isSelected
+                      ? Colors.black
+                      : Theme.of(context).iconTheme.color,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                ),
+              )
+            : Icon(
+                iconData,
+                size: 20,
+                color: isSelected
+                    ? Colors.black
+                    : Theme.of(context).iconTheme.color,
+              ),
+      ),
+    );
+  }
+
+  Stream<QuerySnapshot<Map<String, dynamic>>> filteredExpensesStream() {
+    var user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      throw Exception("No user found");
+    }
+
+    var now = DateTime.now();
+
+    // Calculate the start of the day for 'today' filter
+    var startOfDay = Timestamp.fromDate(DateTime(now.year, now.month, now.day));
+    var endOfDay =
+        Timestamp.fromDate(DateTime(now.year, now.month, now.day, 23, 59, 59));
+
+    // Calculate the start and end of the week
+    // Assuming the week starts on Monday (set `weekday` to 7 for Sunday)
+    var firstDayOfWeek = now.subtract(Duration(days: now.weekday - 1));
+    var lastDayOfWeek = firstDayOfWeek.add(Duration(days: 6));
+
+    var startOfWeek = Timestamp.fromDate(DateTime(
+        firstDayOfWeek.year, firstDayOfWeek.month, firstDayOfWeek.day));
+    var endOfWeek = Timestamp.fromDate(DateTime(lastDayOfWeek.year,
+        lastDayOfWeek.month, lastDayOfWeek.day, 23, 59, 59));
+
+    Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+        .collection('Users')
+        .doc(user.uid)
+        .collection('Expenses')
+        .withConverter<Map<String, dynamic>>(
+          fromFirestore: (snapshots, _) => snapshots.data()!,
+          toFirestore: (expense, _) => expense,
+        );
+
+    // Apply time filter based on _selectedFilter
+    if (_selectedFilter == 'today') {
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfDay)
+          .where('date', isLessThanOrEqualTo: endOfDay);
+    } else if (_selectedFilter == 'this_week') {
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfWeek)
+          .where('date', isLessThanOrEqualTo: endOfWeek);
+    }
+    // For 'this_month'
+    else if (_selectedFilter == 'this_month') {
+      var startOfMonth = Timestamp.fromDate(DateTime(now.year, now.month, 1));
+      var endOfMonth =
+          Timestamp.fromDate(DateTime(now.year, now.month + 1, 0, 23, 59, 59));
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfMonth)
+          .where('date', isLessThanOrEqualTo: endOfMonth);
+    }
+// For 'this_year'
+    else if (_selectedFilter == 'this_year') {
+      var startOfYear = Timestamp.fromDate(DateTime(now.year, 1, 1));
+      var endOfYear =
+          Timestamp.fromDate(DateTime(now.year, 12, 31, 23, 59, 59));
+      query = query
+          .where('date', isGreaterThanOrEqualTo: startOfYear)
+          .where('date', isLessThanOrEqualTo: endOfYear);
+    } else if (_selectedFilter == 'custom') {
+      // For 'custom' filter, use _selectedDate to filter expenses
+      var customStartOfDay = Timestamp.fromDate(
+          DateTime(_selectedDate.year, _selectedDate.month, _selectedDate.day));
+      var customEndOfDay = Timestamp.fromDate(DateTime(_selectedDate.year,
+          _selectedDate.month, _selectedDate.day, 23, 59, 59));
+      query = query
+          .where('date', isGreaterThanOrEqualTo: customStartOfDay)
+          .where('date', isLessThanOrEqualTo: customEndOfDay);
+    }
+
+    // Apply category filter if one is selected
+    if (_selectedCategory != null && _selectedCategory!.isNotEmpty) {
+      query = query.where('category', isEqualTo: _selectedCategory);
+    }
+
+    return query.snapshots();
+  }
+
   void editExpense(BuildContext context, String expenseId) async {
     final User? user = FirebaseAuth.instance.currentUser;
+    final FirebaseFirestore firestore = FirebaseFirestore.instance;
+
     if (user == null) {
-      // Handle the case where there is no user logged in
-      // For example, show a message or redirect to the login page
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
             content:
@@ -228,10 +448,12 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
       );
       return;
     }
+
     final expenseDetails =
         await _firestoreService.getExpenseDetails(user.uid, expenseId);
-
-    // Assuming expenseDetails is a map that contains all the fields
+    double oldAmount =
+        double.tryParse(expenseDetails['amount'].toString()) ?? 0.0;
+    String oldCategory = expenseDetails['category'];
     final _amountController =
         TextEditingController(text: expenseDetails['amount'].toString());
     final _descriptionController =
@@ -293,9 +515,46 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                       });
                     },
                   ),
-                  // Add fields for date, currency, and category similar to your add expense form
                   ElevatedButton(
                     onPressed: () async {
+                      double newAmount = double.parse(_amountController.text);
+                      String newCategory = _selectedCategory;
+
+                      // Fetch current budget settings
+                      var settingsDoc = await firestore
+                          .collection('Users')
+                          .doc(user.uid)
+                          .collection('Preferences')
+                          .doc('Settings')
+                          .get();
+                      Map<String, dynamic> settings = settingsDoc.data() ?? {};
+                      Map<String, double> categoryBudgets =
+                          Map<String, double>.from(
+                              settings['categoryBudgets'] ?? {});
+                      double totalBudget = settings['totalBudget'] ?? 0;
+
+                      // Calculate the difference and adjust budgets
+                      double amountDifference = newAmount - oldAmount;
+                      categoryBudgets[oldCategory] =
+                          (categoryBudgets[oldCategory] ?? 0) -
+                              amountDifference;
+                      if (oldCategory != newCategory) {
+                        categoryBudgets[newCategory] =
+                            (categoryBudgets[newCategory] ?? 0) + newAmount;
+                      }
+                      totalBudget -= amountDifference;
+
+                      // Save updated budgets back to Firestore
+                      await firestore
+                          .collection('Users')
+                          .doc(user.uid)
+                          .collection('Preferences')
+                          .doc('Settings')
+                          .set({
+                        'categoryBudgets': categoryBudgets,
+                        'totalBudget': totalBudget
+                      }, SetOptions(merge: true));
+
                       // Update the expense with new details
                       await _firestoreService.updateExpense(
                         user.uid,
@@ -307,6 +566,7 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                           currency: _selectedCurrency,
                           category: _selectedCategory,
                         ).toMap(),
+                        // Your Expense.toMap() method here...
                       );
 
                       Navigator.pop(context);
@@ -319,6 +579,161 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
           },
         );
       },
+    );
+  }
+
+  // void editExpense(BuildContext context, String expenseId) async {
+  //   final User? user = FirebaseAuth.instance.currentUser;
+  //   if (user == null) {
+  //     // Handle the case where there is no user logged in
+  //     // For example, show a message or redirect to the login page
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //           content:
+  //               Text('No user logged in. Please log in to edit expenses.')),
+  //     );
+  //     return;
+  //   }
+  //   final expenseDetails =
+  //       await _firestoreService.getExpenseDetails(user.uid, expenseId);
+
+  //   // Assuming expenseDetails is a map that contains all the fields
+  //   final _amountController =
+  //       TextEditingController(text: expenseDetails['amount'].toString());
+  //   final _descriptionController =
+  //       TextEditingController(text: expenseDetails['description']);
+  //   DateTime _selectedDate = expenseDetails['date']
+  //       .toDate(); // Make sure to convert Timestamp to DateTime
+  //   String _selectedCurrency = expenseDetails['currency'];
+  //   String _selectedCategory = expenseDetails['category'];
+
+  //   showModalBottomSheet(
+  //     context: context,
+  //     builder: (BuildContext context) {
+  //       return StatefulBuilder(
+  //         builder: (BuildContext context, StateSetter setModalState) {
+  //           return Container(
+  //             padding: EdgeInsets.all(16),
+  //             child: Column(
+  //               mainAxisSize: MainAxisSize.min,
+  //               children: <Widget>[
+  //                 TextField(
+  //                   controller: _amountController,
+  //                   decoration: InputDecoration(labelText: 'Amount'),
+  //                   keyboardType:
+  //                       TextInputType.numberWithOptions(decimal: true),
+  //                 ),
+  //                 TextField(
+  //                   controller: _descriptionController,
+  //                   decoration: InputDecoration(labelText: 'Description'),
+  //                 ),
+  //                 DropdownButtonFormField(
+  //                   value: _selectedCurrency,
+  //                   decoration: InputDecoration(labelText: 'Currency'),
+  //                   items: currencies
+  //                       .map<DropdownMenuItem<String>>((String value) {
+  //                     return DropdownMenuItem<String>(
+  //                       value: value,
+  //                       child: Text(value),
+  //                     );
+  //                   }).toList(),
+  //                   onChanged: (String? newValue) {
+  //                     setState(() {
+  //                       _selectedCurrency = newValue!;
+  //                     });
+  //                   },
+  //                 ),
+  //                 DropdownButtonFormField(
+  //                   value: _selectedCategory,
+  //                   decoration: InputDecoration(labelText: 'Category'),
+  //                   items: categories
+  //                       .map<DropdownMenuItem<String>>((String value) {
+  //                     return DropdownMenuItem<String>(
+  //                       value: value,
+  //                       child: Text(value),
+  //                     );
+  //                   }).toList(),
+  //                   onChanged: (String? newValue) {
+  //                     setState(() {
+  //                       _selectedCategory = newValue!;
+  //                     });
+  //                   },
+  //                 ),
+  //                 // Add fields for date, currency, and category similar to your add expense form
+  //                 ElevatedButton(
+  //                   onPressed: () async {
+  //                     // Update the expense with new details
+  //                     await _firestoreService.updateExpense(
+  //                       user.uid,
+  //                       expenseId,
+  //                       Expense(
+  //                         amount: double.parse(_amountController.text),
+  //                         description: _descriptionController.text,
+  //                         date: _selectedDate,
+  //                         currency: _selectedCurrency,
+  //                         category: _selectedCategory,
+  //                       ).toMap(),
+  //                     );
+
+  //                     Navigator.pop(context);
+  //                   },
+  //                   child: Text('Update Expense'),
+  //                 ),
+  //               ],
+  //             ),
+  //           );
+  //         },
+  //       );
+  //     },
+  //   );
+  // }
+
+  Widget categoryOptions(BuildContext context) {
+    final categoriesList = categoryIcons.keys.toList();
+    Map<int, Widget> children = categoriesList.asMap().map(
+          (index, category) => MapEntry(
+            index,
+            Container(
+              padding: EdgeInsets.symmetric(horizontal: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    categoryIcons[category],
+                    size: 24,
+                    color: _selectedCategory == category ? Colors.black : null,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+
+    // Find the current groupValue based on the selected category
+    int? groupValue = _selectedCategory != null
+        ? categoriesList.indexOf(_selectedCategory!)
+        : null;
+
+    return Container(
+      alignment: Alignment.center,
+      child: CupertinoSlidingSegmentedControl<int>(
+        backgroundColor: Colors.transparent,
+        thumbColor: Colors.greenAccent,
+        padding: const EdgeInsets.all(8),
+        groupValue: groupValue != null && groupValue >= 0 ? groupValue : null,
+        // Handle if no category is selected
+        children: children,
+        onValueChanged: (value) {
+          if (value != null) {
+            setState(() {
+              // Update the selected category based on the selected segment
+              _selectedCategory = categoriesList[value];
+              _onCategoryChanged(
+                  _selectedCategory); // Call the method to handle category change
+            });
+          }
+        },
+      ),
     );
   }
 
@@ -348,11 +763,7 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
         ),
       ),
       body: StreamBuilder<QuerySnapshot>(
-        stream: FirebaseFirestore.instance
-            .collection('Users')
-            .doc(user.uid)
-            .collection('Expenses')
-            .snapshots(),
+        stream: filteredExpensesStream(),
         builder: (context, snapshot) {
           if (!snapshot.hasData) {
             return Center(child: CircularProgressIndicator());
@@ -365,19 +776,56 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
               children: [
                 Padding(
                   padding: const EdgeInsets.all(8.0),
-                  child: DropdownButton<String>(
-                    value: sortType,
-                    onChanged: (value) {
+                  child: Wrap(
+                    children: [
+                      _filterButton('Today', null, 'today'),
+                      _filterButton('Week', null, 'this_week'),
+                      _filterButton('Month', null, 'this_month'),
+                      _filterButton('Year', null, 'this_year'),
+                      _filterButton('All', null, 'all'),
+                      _filterButton('', Icons.calendar_today, 'custom'),
+                    ],
+                  ),
+                ),
+                categoryOptions(context),
+                Padding(
+                  padding: const EdgeInsets.all(8.0),
+                  // PopupMenuButton for sorting options with a filter list icon
+                  child: PopupMenuButton<String>(
+                    icon: Icon(Icons.filter_list, color: Colors.white),
+                    onSelected: (String value) {
                       setState(() {
-                        sortType = value!;
+                        sortType = value;
                       });
+                      _fetchExpenses(); // Make sure to call a method that re-fetches or sorts the expenses based on the new sortType
                     },
-                    items: [
-                      DropdownMenuItem(
-                          value: 'Recent', child: Text('Most Recent')),
-                      DropdownMenuItem(
-                          value: 'Highest', child: Text('Highest Amount')),
-                      // Add other sorting options here
+                    itemBuilder: (BuildContext context) =>
+                        <PopupMenuEntry<String>>[
+                      PopupMenuItem<String>(
+                        value: 'Recent',
+                        child: Row(
+                          children: const [
+                            Icon(Icons.new_releases,
+                                color: Colors
+                                    .black), // Example icon for 'Most Recent'
+                            SizedBox(width: 8),
+                            Text('Most Recent'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem<String>(
+                        value: 'Highest',
+                        child: Row(
+                          children: const [
+                            Icon(Icons.trending_up,
+                                color: Colors
+                                    .black), // Example icon for 'Highest Amount'
+                            SizedBox(width: 8),
+                            Text('Highest Amount'),
+                          ],
+                        ),
+                      ),
+                      // Add other sorting options here with icons
                     ],
                   ),
                 ),
@@ -413,11 +861,11 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                           );
                         }
 
-                        double convertedAmount = snapshot.data ??
-                            amount; // Use original amount as fallback
+                        double convertedAmount = snapshot.data ?? amount;
                         String formattedAmount =
                             NumberFormat.simpleCurrency(name: preferredCurrency)
                                 .format(convertedAmount);
+                        String dateS = DateFormat.MMMMEEEEd().format(date);
 
                         return Dismissible(
                           key: Key(expenseDoc.id),
@@ -452,9 +900,59 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                               },
                             );
                             if (confirmDelete) {
-                              FirebaseFirestore.instance
+                              final String userId =
+                                  FirebaseAuth.instance.currentUser!.uid;
+                              final DocumentSnapshot expenseSnapshot =
+                                  await FirebaseFirestore.instance
+                                      .collection('Users')
+                                      .doc(userId)
+                                      .collection('Expenses')
+                                      .doc(expenseDoc.id)
+                                      .get();
+
+                              final double amountToDelete =
+                                  expenseSnapshot['amount'];
+                              final String categoryToDelete =
+                                  expenseSnapshot['category'];
+
+                              // Fetch current budget settings
+                              final DocumentSnapshot settingsSnapshot =
+                                  await FirebaseFirestore.instance
+                                      .collection('Users')
+                                      .doc(userId)
+                                      .collection('Preferences')
+                                      .doc('Settings')
+                                      .get();
+
+                              Map<String, dynamic> settings = settingsSnapshot
+                                      .data() as Map<String, dynamic> ??
+                                  {};
+                              Map<String, double> categoryBudgets =
+                                  Map<String, double>.from(
+                                      settings['categoryBudgets'] ?? {});
+                              double totalBudget = settings['totalBudget'] ?? 0;
+
+                              // Adjust the category and total budget
+                              categoryBudgets[categoryToDelete] =
+                                  (categoryBudgets[categoryToDelete] ?? 0) +
+                                      amountToDelete;
+                              totalBudget += amountToDelete;
+
+                              // Update the budget settings
+                              await FirebaseFirestore.instance
                                   .collection('Users')
-                                  .doc(FirebaseAuth.instance.currentUser!.uid)
+                                  .doc(userId)
+                                  .collection('Preferences')
+                                  .doc('Settings')
+                                  .set({
+                                'categoryBudgets': categoryBudgets,
+                                'totalBudget': totalBudget
+                              }, SetOptions(merge: true));
+
+                              // Proceed with deletion
+                              await FirebaseFirestore.instance
+                                  .collection('Users')
+                                  .doc(userId)
                                   .collection('Expenses')
                                   .doc(expenseDoc.id)
                                   .delete();
@@ -463,11 +961,22 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                           },
                           child: ListTile(
                             leading: Icon(
-                                categoryIcons[category] ?? Icons.help_outline,
-                                size: 40),
-                            title: Text(formattedAmount),
-                            subtitle: Text(description),
-                            trailing: Text(DateFormat.MMMMEEEEd().format(date)),
+                              categoryIcons[category] ?? Icons.help_outline,
+                              size: 40,
+                              color: Colors.greenAccent,
+                            ),
+                            title: Text(
+                              '$description',
+                              style: TextStyle(fontFamily: "CourierPrime"),
+                            ),
+                            subtitle: Text(
+                              '$formattedAmount',
+                              style: TextStyle(fontFamily: "CourierPrime"),
+                            ),
+                            trailing: Text(
+                              '$dateS',
+                              style: TextStyle(fontFamily: "CourierPrime"),
+                            ),
                             onTap: () {
                               editExpense(context, expenseDoc.id);
                             },
@@ -499,390 +1008,3 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
     );
   }
 }
-
-
-// class PastTransactionsPage extends StatefulWidget {
-//   const PastTransactionsPage({Key? key}) : super(key: key);
-
-//   @override
-//   State<PastTransactionsPage> createState() => _PastTransactionsPageState();
-// }
-
-// class _PastTransactionsPageState extends State<PastTransactionsPage> {
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text(
-//           "Past Transactions",
-//           style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-//         ),
-//         actions: <Widget>[
-//           IconButton(
-//             icon: Icon(Icons.brightness_6),
-//             onPressed: () {
-//               // Toggling the theme using Bloc
-//               final themeBloc = BlocProvider.of<ThemeBloc>(context);
-//               themeBloc.add(ThemeChanged(
-//                   isDarkMode: themeBloc.state.themeData.brightness ==
-//                       Brightness.light));
-//             },
-//           ),
-//         ],
-//       ),
-//       body: UpcomingTransactionsList(),
-//     );
-//   }
-// }
-
-// class UpcomingTransactionsList extends StatefulWidget {
-//   const UpcomingTransactionsList();
-
-//   @override
-//   State<UpcomingTransactionsList> createState() =>
-//       _UpcomingTransactionsListState();
-// }
-
-// class _UpcomingTransactionsListState extends State<UpcomingTransactionsList> {
-//   int touchedIndex = -1;
-//   String sortType = 'Recent'; // Variable to track the current sort type
-
-//   // Function to sort expenses based on the selected sort type
-//   void sortExpenses(List<QueryDocumentSnapshot> expenses) {
-//     if (sortType == 'Highest') {
-//       expenses.sort((a, b) => (b.data() as Map<String, dynamic>)['amount']
-//           .compareTo((a.data() as Map<String, dynamic>)['amount']));
-//     } else if (sortType == 'Recent') {
-//       expenses.sort((a, b) => (b.data() as Map<String, dynamic>)['date']
-//           .compareTo((a.data() as Map<String, dynamic>)['date']));
-//     }
-//     // Add more sorting options as needed
-//   }
-
-//   final Map<String, IconData> categoryIcons = {
-//     'Groceries': Icons.shopping_cart,
-//     'Dining Out': Icons.restaurant,
-//     'Transport': Icons.directions_car,
-//     'Entertainment': Icons.movie,
-//     'Travel': Icons.airplanemode_active,
-//     'Education': Icons.school,
-//     'Clothing & Accessories': Icons.checkroom,
-//     'Miscellaneous': Icons.miscellaneous_services,
-//   };
-
-//   @override
-//   Widget build(BuildContext context) {
-//     final User? user = FirebaseAuth.instance.currentUser;
-//     if (user == null) {
-//       return Center(child: Text("Please login to see transactions."));
-//     }
-
-//     return StreamBuilder<QuerySnapshot>(
-//         stream: FirebaseFirestore.instance
-//             .collection('Users')
-//             .doc(user.uid)
-//             .collection('Expenses')
-//             .snapshots(),
-//         builder: (context, snapshot) {
-//           if (!snapshot.hasData) {
-//             return Center(child: CircularProgressIndicator());
-//           }
-//           var expenses = snapshot.data!.docs;
-//           sortExpenses(expenses);
-//           Map<String, double> categorySums =
-//               aggregateExpensesByCategory(expenses);
-
-//           return SingleChildScrollView(
-//             child: Column(
-//               children: [
-//                 Padding(
-//                   padding: const EdgeInsets.only(
-//                       top: 16.0), // Adjust the value as needed for your design
-//                   child: Text(
-//                     'Expenses Breakdown',
-//                     style: Theme.of(context).textTheme.titleLarge,
-//                   ),
-//                 ),
-//                 if (categorySums.isNotEmpty) ...[
-//                   Padding(
-//                     padding: const EdgeInsets.symmetric(vertical: 8.0),
-//                     child: Container(
-//                       height: 200, // Define a fixed height for the PieChart
-//                       child: buildCategoryPieChart(categorySums),
-//                     ),
-//                   ),
-//                   Padding(
-//                     padding: const EdgeInsets.only(bottom: 16.0),
-//                     child: buildChartKey(categorySums),
-//                   ),
-//                   SizedBox(
-//                       height: 16), // Margin between the pie chart and the list
-//                 ],
-//                 // Sort button or dropdown
-//                 Padding(
-//                   padding: const EdgeInsets.all(8.0),
-//                   child: DropdownButton<String>(
-//                     value: sortType,
-//                     onChanged: (value) {
-//                       setState(() {
-//                         sortType = value!;
-//                       });
-//                     },
-//                     items: [
-//                       DropdownMenuItem(
-//                           value: 'Recent', child: Text('Most Recent')),
-//                       DropdownMenuItem(
-//                           value: 'Highest', child: Text('Highest Amount')),
-//                       // Add other sorting options here
-//                     ],
-//                   ),
-//                 ),
-
-//                 // ListView.builder(
-//                 //   shrinkWrap: true,
-//                 //   physics: NeverScrollableScrollPhysics(),
-//                 //   itemCount: expenses.length,
-//                 //   itemBuilder: (context, index) {
-//                 //     var expense =
-//                 //         expenses[index].data() as Map<String, dynamic>;
-//                 //     DateTime date = (expense['date'] as Timestamp).toDate();
-//                 //     double amount = expense['amount'];
-//                 //     String description = expense['description'];
-//                 //     String currency = expense['currency'] ?? 'USD';
-//                 //     String category = expense['category'] ?? 'Uncategorized';
-//                 //     final format = NumberFormat.simpleCurrency(name: currency);
-//                 //     String formattedAmount = format.format(amount);
-//                 //     return ListTile(
-//                 //       leading: Icon(
-//                 //           categoryIcons[category] ?? Icons.help_outline,
-//                 //           size: 40),
-//                 //       title: Text(formattedAmount),
-//                 //       subtitle: Text(description),
-//                 //       trailing: Text(DateFormat.MMMMEEEEd().format(date)),
-//                 //     );
-//                 //   },
-//                 // ),
-//                 ListView.builder(
-//                   shrinkWrap: true,
-//                   physics: NeverScrollableScrollPhysics(),
-//                   itemCount: expenses.length,
-//                   itemBuilder: (context, index) {
-//                     var expenseDoc = expenses[index];
-//                     var expense = expenseDoc.data() as Map<String, dynamic>;
-//                     DateTime date = (expense['date'] as Timestamp).toDate();
-//                     double amount = expense['amount'];
-//                     String description = expense['description'];
-//                     String currency = expense['currency'] ?? 'USD';
-//                     String category = expense['category'] ?? 'Uncategorized';
-//                     final format = NumberFormat.simpleCurrency(name: currency);
-//                     String formattedAmount = format.format(amount);
-
-//                     return Dismissible(
-//                       key: Key(expenseDoc.id),
-//                       direction: DismissDirection.endToStart,
-//                       background: Container(
-//                         color: Colors.red,
-//                         alignment: Alignment.centerRight,
-//                         padding: EdgeInsets.symmetric(horizontal: 20.0),
-//                         child: Icon(Icons.delete, color: Colors.white),
-//                       ),
-//                       confirmDismiss: (direction) async {
-//                         final bool confirmDelete = await showDialog(
-//                           context: context,
-//                           builder: (BuildContext context) {
-//                             return AlertDialog(
-//                               title: Text('Confirm'),
-//                               content: Text(
-//                                   'Are you sure you want to delete this expense?'),
-//                               actions: <Widget>[
-//                                 TextButton(
-//                                   onPressed: () =>
-//                                       Navigator.of(context).pop(true),
-//                                   child: Text('Delete'),
-//                                 ),
-//                                 TextButton(
-//                                   onPressed: () =>
-//                                       Navigator.of(context).pop(false),
-//                                   child: Text('Cancel'),
-//                                 ),
-//                               ],
-//                             );
-//                           },
-//                         );
-//                         if (confirmDelete) {
-//                           // Perform deletion
-//                           FirebaseFirestore.instance
-//                               .collection('Users')
-//                               .doc(FirebaseAuth.instance.currentUser!.uid)
-//                               .collection('Expenses')
-//                               .doc(expenseDoc.id)
-//                               .delete();
-//                         }
-//                         return confirmDelete;
-//                       },
-//                       child: ListTile(
-//                         leading: Icon(
-//                             categoryIcons[category] ?? Icons.help_outline,
-//                             size: 40),
-//                         title: Text(formattedAmount),
-//                         subtitle: Text(description),
-//                         trailing: IconButton(
-//                           icon: Icon(Icons.edit),
-//                           onPressed: () =>
-//                               editExpense(context, expenseDoc.id, expense),
-//                         ),
-//                         onTap: () {
-//                           // Implement what happens when you tap on the expense
-//                         },
-//                       ),
-//                     );
-//                   },
-//                 ),
-//               ],
-//             ),
-//           );
-//         });
-//   }
-
-//   void editExpense(BuildContext context, String expenseId,
-//       Map<String, dynamic> expenseData) {
-//     showModalBottomSheet(
-//       context: context,
-//       builder: (context) {
-//         // Return your edit form here
-//         return Container(
-//           padding: EdgeInsets.all(16),
-//           height: 500, // Modify as per your design
-//           child: Column(
-//             mainAxisSize: MainAxisSize.min,
-//             children: <Widget>[
-//               TextField(
-//                 // Pre-fill the text fields with current expense data
-//                 controller:
-//                     TextEditingController(text: expenseData['description']),
-//                 decoration: InputDecoration(labelText: 'Description'),
-//               ),
-//               TextField(
-//                 controller: TextEditingController(
-//                     text: expenseData['amount'].toString()),
-//                 decoration: InputDecoration(labelText: 'Amount'),
-//                 keyboardType: TextInputType.numberWithOptions(decimal: true),
-//               ),
-//               // Add other fields for editing as necessary
-//               ElevatedButton(
-//                 child: Text('Update Expense'),
-//                 onPressed: () {
-//                   // Update the expense in Firestore
-//                   // Close the bottom sheet
-//                 },
-//               ),
-//             ],
-//           ),
-//         );
-//       },
-//     );
-//   }
-
-//   Map<String, double> aggregateExpensesByCategory(
-//       List<QueryDocumentSnapshot> expenses) {
-//     Map<String, double> categorySums = {};
-//     for (var doc in expenses) {
-//       final expense = doc.data() as Map<String, dynamic>;
-//       final category = expense['category'] ?? 'Uncategorized';
-//       final amount = expense['amount'] as double;
-//       categorySums.update(category, (value) => value + amount,
-//           ifAbsent: () => amount);
-//     }
-//     return categorySums;
-//   }
-
-//   // Function to build the pie chart key
-//   Widget buildChartKey(Map<String, double> categorySums) {
-//     List<Widget> keys = categorySums.keys.map((key) {
-//       return Row(
-//         mainAxisSize: MainAxisSize.min,
-//         children: [
-//           Icon(categoryIcons[key] ?? Icons.circle, size: 16),
-//           SizedBox(width: 8),
-//           Text(key),
-//         ],
-//       );
-//     }).toList();
-
-//     return Wrap(
-//       spacing: 16,
-//       runSpacing: 16,
-//       children: keys,
-//     );
-//   }
-
-//   Widget buildCategoryPieChart(Map<String, double> categorySums) {
-//     int touchedIndex = -1; // Use this to identify which segment is touched
-
-//     // Function to determine the right color for each category
-//     Color getCategoryColor(String category) {
-//       switch (category) {
-//         case 'Food':
-//           return Colors.blue;
-//         case 'Transport':
-//           return Colors.purple;
-//         case 'Shopping':
-//           return Colors.red;
-//         // Add more categories and colors as needed
-//         default:
-//           return Colors.greenAccent; // Default color for undefined categories
-//       }
-//     }
-
-//     return PieChart(
-//       PieChartData(
-//         pieTouchData: PieTouchData(
-//           touchCallback:
-//               (FlTouchEvent event, PieTouchResponse? pieTouchResponse) {
-//             setState(() {
-//               if (!event.isInterestedForInteractions ||
-//                   pieTouchResponse == null ||
-//                   pieTouchResponse.touchedSection == null) {
-//                 touchedIndex = -1;
-//                 return;
-//               }
-//               touchedIndex =
-//                   pieTouchResponse.touchedSection!.touchedSectionIndex;
-//             });
-//           },
-//         ),
-//         borderData: FlBorderData(show: false),
-//         sectionsSpace:
-//             0, // No space between sections to replicate the image design
-//         centerSpaceRadius: 30, // Adjust the size of the center space (hole)
-//         sections: categorySums.entries.map((entry) {
-//           final index = categorySums.keys.toList().indexOf(entry.key);
-//           final isTouched = index == touchedIndex;
-//           final fontSize =
-//               isTouched ? 18.0 : 14.0; // Increase font size when touched
-//           final radius =
-//               isTouched ? 110.0 : 100.0; // Increase radius when touched
-//           final color =
-//               getCategoryColor(entry.key); // Get color based on category
-
-//           return PieChartSectionData(
-//             color: color,
-//             value: entry.value,
-//             title: '${entry.key}\n${entry.value.toStringAsFixed(0)}%',
-//             radius: radius,
-//             titleStyle: TextStyle(
-//               fontSize: fontSize,
-//               fontWeight: FontWeight.bold,
-//               color: const Color(0xffffffff),
-//             ),
-//             titlePositionPercentageOffset:
-//                 0.55, // Positions the title inside the section
-//             borderSide: BorderSide(
-//                 color: color.withOpacity(0.1),
-//                 width: isTouched ? 6 : 0), // Border side when touched
-//           );
-//         }).toList(),
-//       ),
-//     );
-//   }
-// }

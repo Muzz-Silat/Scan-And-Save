@@ -1,5 +1,6 @@
 // ignore_for_file: prefer_const_constructors, file_names
 
+import 'package:demo_flutter/screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -10,6 +11,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:demo_flutter/theme_bloc.dart';
 import 'package:demo_flutter/theme_event.dart';
 import 'package:demo_flutter/theme_state.dart';
+import 'package:demo_flutter/screens/login_screen.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({Key? key}) : super(key: key);
@@ -19,12 +21,9 @@ class AccountPage extends StatefulWidget {
 }
 
 class _AccountPageState extends State<AccountPage> {
-  List<String> currencies = ['USD', 'EUR', 'GBP']; // Example currencies
-  String _selectedCurrency = 'USD'; // Default or load from user preferences
+  final _auth = FirebaseAuth.instance;
   @override
   Widget build(BuildContext context) {
-    final themeBloc = BlocProvider.of<ThemeBloc>(context);
-    bool isDarkMode = themeBloc.state.themeData.brightness == Brightness.dark;
     return Scaffold(
         body: ListView(
       // ignore: prefer_const_literals_to_create_immutables
@@ -147,27 +146,6 @@ class _AccountPageState extends State<AccountPage> {
             ),
           ),
         ),
-        Padding(
-          padding: EdgeInsets.all(15),
-          child: ElevatedButton(
-            style: ButtonStyle(
-                backgroundColor:
-                    MaterialStateProperty.all<Color>(Colors.blueAccent)),
-            onPressed: () {
-              final themeBloc = BlocProvider.of<ThemeBloc>(context);
-              bool isDarkMode =
-                  themeBloc.state.themeData.brightness == Brightness.dark;
-              themeBloc.add(ThemeChanged(isDarkMode: !isDarkMode));
-            },
-            child: BlocBuilder<ThemeBloc, ThemeState>(
-              builder: (context, state) {
-                return Text(state.themeData.brightness == Brightness.dark
-                    ? 'Switch to Light Mode'
-                    : 'Switch to Dark Mode');
-              },
-            ),
-          ),
-        ),
         Align(
           alignment: Alignment.topCenter,
           child: Padding(
@@ -176,7 +154,7 @@ class _AccountPageState extends State<AccountPage> {
               style: ButtonStyle(
                   backgroundColor:
                       MaterialStateProperty.all<Color>(Colors.redAccent)),
-              onPressed: () {},
+              onPressed: _logout,
               child: Text(
                 "Log Out",
                 style: TextStyle(color: Colors.white),
@@ -188,20 +166,25 @@ class _AccountPageState extends State<AccountPage> {
     ));
   }
 
-  void saveUserPreferences() async {
-    final User? user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      await FirebaseFirestore.instance
-          .collection('Users')
-          .doc(user.uid)
-          .collection('Preferences')
-          .doc('Settings')
-          .set({
-            'PreferredCurrency': _selectedCurrency,
-            // Add other preferences as needed
-          }, SetOptions(merge: true))
-          .then((_) => print('Preferences saved successfully'))
-          .catchError((error) => print('Failed to save preferences: $error'));
-    }
+  Future<void> _logout() async {
+    await _auth.signOut();
+    Navigator.pushReplacementNamed(context, HomeScreen.id);
   }
+
+  // void saveUserPreferences() async {
+  //   final User? user = FirebaseAuth.instance.currentUser;
+  //   if (user != null) {
+  //     await FirebaseFirestore.instance
+  //         .collection('Users')
+  //         .doc(user.uid)
+  //         .collection('Preferences')
+  //         .doc('Settings')
+  //         .set({
+  //           'PreferredCurrency': _selectedCurrency,
+  //           // Add other preferences as needed
+  //         }, SetOptions(merge: true))
+  //         .then((_) => print('Preferences saved successfully'))
+  //         .catchError((error) => print('Failed to save preferences: $error'));
+  //   }
+  // }
 }

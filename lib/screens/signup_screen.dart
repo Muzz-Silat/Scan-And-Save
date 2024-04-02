@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:demo_flutter/components/components.dart';
 import 'package:demo_flutter/screens/home_screen.dart';
 import 'package:demo_flutter/screens/login_screen.dart';
@@ -54,15 +53,21 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           SizedBox(height: 60),
                           SizedBox(
                             width: double.infinity, // Take the full width
-                            child: Text(
-                              'Scan & Save',
-                              textAlign:
-                                  TextAlign.center, // Center text horizontally
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 40,
-                                fontFamily: 'DotGothic16',
-                                fontWeight: FontWeight.w400,
+                            child: Hero(
+                              tag: 'scanAndSave',
+                              child: Material(
+                                color: Colors
+                                    .transparent, // Needed for text within Hero
+                                child: Text(
+                                  'Scan & Save',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 40,
+                                    fontFamily: 'DotGothic16',
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
                               ),
                             ),
                           ),

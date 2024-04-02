@@ -264,6 +264,7 @@
 // }
 
 import 'package:flutter/material.dart';
+import 'dart:math' as math;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
@@ -281,6 +282,9 @@ class _SmartBudgetPageState extends State<SmartBudgetPage> {
   final TextEditingController _savingsGoalController = TextEditingController();
   String budgetAdvice = "Your budget breakdown will be displayed here.";
   bool isLoading = false;
+  double totalBudget = 0;
+  double savings = 0;
+  Map<String, double> categoryBudgets = {};
   final List<String> categories = [
     'Groceries',
     'Dining Out',
@@ -337,7 +341,7 @@ class _SmartBudgetPageState extends State<SmartBudgetPage> {
         "a savings goal of \$${_savingsGoalController.text}, and detailed previous month's expenses as follows: $expenseDetails, "
         "allocate the remaining budget after subtracting the savings goal from the monthly income across the following categories: ${categories.join(', ')}. "
         "Ensure the output is in this format, without including anything else - Budget: TotalValue, Groceries: Value, Dining Out: Value, Transport: Value, Entertainment: Value, Travel: Value, Education: Value, Clothing & Accessories: Value, Miscellaneous: Value, Savings: Value"
-        "Ensure the total budget is less than the monthly income minus the savings goal and is based on the proportional spending of last month's expenses. Also Ensure that none of the categories have value of 0 allocated";
+        "Ensure the total budget is less than the monthly income minus the savings goal. Ensure each Category has a value of greater than 0, and uses previous month's expense to provide values for each category. If prevous month's expense is empty then provide based off normal spending";
 
     final request = ChatCompleteText(
       model: GptTurbo0301ChatModel(),
@@ -347,8 +351,33 @@ class _SmartBudgetPageState extends State<SmartBudgetPage> {
 
     try {
       final response = await _openAI.onChatCompletion(request: request);
+      String budgetAdviceResponse =
+          response!.choices.first.message!.content.trim();
+
+      // Define a pattern that matches each category and its corresponding value
+      RegExp regExp = RegExp(r'(\w[\w &]*): \$(\d+)');
+
+      // Use RegExp to find all matches
+      var matches = regExp.allMatches(budgetAdviceResponse);
+      Map<String, double> localCategoryBudgets = {};
+
+      // Loop through all matches and add them to the map
+      for (var match in matches) {
+        String category = match.group(1)!; // This is the category name
+        double value = double.parse(match.group(2)!); // This is the value
+
+        // Save them to a map
+        localCategoryBudgets[category] = value;
+      }
+      double localSavingsGoal =
+          double.tryParse(_savingsGoalController.text) ?? 0.0;
+      double localMonthlyIncome =
+          double.tryParse(_monthlyIncomeController.text) ?? 0.0;
       setState(() {
         budgetAdvice = response!.choices.first.message!.content.trim();
+        totalBudget = localMonthlyIncome - localSavingsGoal;
+        savings = localSavingsGoal;
+        categoryBudgets = localCategoryBudgets;
         isLoading = false;
       });
     } catch (e) {
@@ -362,84 +391,181 @@ class _SmartBudgetPageState extends State<SmartBudgetPage> {
 
   @override
   Widget build(BuildContext context) {
+    categoryBudgets = Map.from(categoryBudgets)..remove("Savings");
+    categoryBudgets = Map.from(categoryBudgets)..remove("Budget");
+    double monthlyIncome =
+        double.tryParse(_monthlyIncomeController.text) ?? 0.0;
+    double totalCategoryBudgets =
+        categoryBudgets.values.fold(0, (sum, element) => sum + element);
+    savings = monthlyIncome - totalCategoryBudgets;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Smart Budget Plan'),
         centerTitle: true,
       ),
-      body: SingleChildScrollView(
-        child: Padding(
-          padding: const EdgeInsets.all(16.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextField(
-                controller: _monthlyIncomeController,
-                decoration:
-                    const InputDecoration(labelText: 'Monthly Income (\$)'),
-                keyboardType: TextInputType.number,
-              ),
-              SizedBox(height: 8),
-              TextField(
-                controller: _savingsGoalController,
-                decoration:
-                    const InputDecoration(labelText: 'Savings Goal (\$)'),
-                keyboardType: TextInputType.number,
-              ),
-              SizedBox(height: 16),
-              isLoading
-                  ? const CircularProgressIndicator()
-                  : ElevatedButton(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextField(
+                      controller: _monthlyIncomeController,
+                      decoration: const InputDecoration(
+                          labelText: 'Monthly Income (\$)'),
+                      keyboardType: TextInputType.number,
+                      onSubmitted: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _savingsGoalController,
+                      decoration:
+                          const InputDecoration(labelText: 'Savings Goal (\$)'),
+                      keyboardType: TextInputType.number,
+                      onSubmitted: (_) => setState(() {}),
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
                       onPressed: generateBudgetPlan,
                       child: const Text('Generate Budget Plan'),
                     ),
-              SizedBox(height: 20),
-              Text(
-                budgetAdvice,
-                style: const TextStyle(fontSize: 18),
-                textAlign: TextAlign.center,
-              ),
-              // Save Budget Button
-              if (!isLoading &&
-                  budgetAdvice !=
-                      "Your budget breakdown will be displayed here.") // Check if the budget plan has been generated
-                ElevatedButton(
-                  onPressed: () async {
-                    // Extract the total budget value from the response
-                    RegExp regex = RegExp(r"Budget: \$([\d\.]+)");
-                    var matches = regex.firstMatch(budgetAdvice);
-                    if (matches != null && matches.groupCount >= 1) {
-                      double budgetValue = double.parse(matches.group(1)!);
-                      await saveBudgetToFirestore(budgetValue);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Budget saved successfully')),
-                      );
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text('Failed to extract budget value')),
-                      );
-                    }
-                  },
-                  child: const Text('Save Budget to Firestore'),
+                    const SizedBox(height: 20),
+                    ...categoryBudgets.entries.map((entry) => BudgetSlider(
+                          category: entry.key,
+                          budgetValue: entry.value,
+                          onChanged: (newValue) {
+                            double tempTotal = totalCategoryBudgets -
+                                categoryBudgets[entry.key]! +
+                                newValue;
+                            if (monthlyIncome < tempTotal) {
+                              // Show error message if total budget exceeds monthly income
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                    content: Text(
+                                        "Total budget cannot exceed monthly income.")),
+                              );
+                              return; // Prevent state update
+                            }
+
+                            setState(() {
+                              categoryBudgets[entry.key] = newValue;
+                              // Recalculate total budget and savings
+                              totalCategoryBudgets = categoryBudgets.values
+                                  .fold(0, (sum, element) => sum + element);
+                              savings = monthlyIncome - totalCategoryBudgets;
+                              totalBudget = monthlyIncome - savings;
+                            });
+                          },
+                        )),
+                    Text(
+                      'Total Budget: \$${totalCategoryBudgets.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    Text(
+                      'Savings: \$${savings.toStringAsFixed(2)}',
+                      style: const TextStyle(fontSize: 18),
+                    ),
+                    const SizedBox(height: 20),
+                    ElevatedButton(
+                      onPressed: () async {
+                        if (savings < 0) {
+                          // Additional check before saving to Firestore
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                                content: Text(
+                                    "Cannot save: Total budget exceeds monthly income.")),
+                          );
+                          return;
+                        }
+                        await saveBudgetToFirestore();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                              content: Text('Budget saved successfully')),
+                        );
+                      },
+                      child: const Text('Save Budget to Firestore'),
+                    ),
+                  ],
                 ),
-            ],
-          ),
-        ),
-      ),
+              ),
+            ),
     );
   }
 
-  Future<void> saveBudgetToFirestore(double budgetValue) async {
+  Future<void> saveBudgetToFirestore() async {
     final FirebaseAuth auth = FirebaseAuth.instance;
     final FirebaseFirestore firestore = FirebaseFirestore.instance;
     final User? user = auth.currentUser;
 
     if (user != null) {
-      await firestore.collection('Users').doc(user.uid).set({
-        'totalBudget': budgetValue,
-      }, SetOptions(merge: true));
-      print('Budget saved: $budgetValue');
+      // Identify the document ID for the current month and year
+      String monthYear = getCurrentMonthYear();
+      double updatedTotalBudget =
+          categoryBudgets.values.fold(0, (sum, element) => sum + element);
+
+      // Structure the data for monthly budget tracking
+      Map<String, dynamic> monthlyBudgetData = {
+        'totalBudget': updatedTotalBudget,
+        'savings': savings,
+        'categoryBudgets': categoryBudgets,
+        // Include 'monthlyIncome' if needed
+        'monthlyIncome': _monthlyIncomeController.text.isNotEmpty
+            ? double.parse(_monthlyIncomeController.text)
+            : 0,
+      };
+
+      // Save the structured data to the 'Budgets' collection, under a document named after the current month and year
+      await firestore
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Budgets')
+          .doc(monthYear)
+          .set(monthlyBudgetData, SetOptions(merge: true));
+      await firestore
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Preferences')
+          .doc('Settings')
+          .set(monthlyBudgetData, SetOptions(merge: true));
+
+      print('Monthly budget for $monthYear saved: $updatedTotalBudget');
     }
+  }
+}
+
+String getCurrentMonthYear() {
+  final DateTime now = DateTime.now();
+  return "${now.year}-${now.month.toString().padLeft(2, '0')}";
+}
+
+class BudgetSlider extends StatelessWidget {
+  final String category;
+  final double budgetValue;
+  final ValueChanged<double> onChanged;
+
+  const BudgetSlider({
+    Key? key,
+    required this.category,
+    required this.budgetValue,
+    required this.onChanged,
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text('$category: \$${budgetValue.toStringAsFixed(2)}'),
+        Slider(
+          value: budgetValue,
+          min: 0,
+          max: 1000, // Adjust the max value based on your application's needs
+          divisions: 100,
+          label: budgetValue.toStringAsFixed(2),
+          onChanged: onChanged,
+        ),
+      ],
+    );
   }
 }
