@@ -1,16 +1,42 @@
-# demo_flutter
+Scan & Save
 
-A new Flutter project.
+How to setup project
+1. Clone the project repository: 
 
-## Getting Started
+git clone https://git.cs.bham.ac.uk/projects-2023-24/mxs1576.git
 
-This project is a starting point for a Flutter application.
+2.  cd into mxs1576 if not already there
 
-A few resources to get you started if this is your first Flutter project:
+cd mxs1576
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+3. Open up a terminal and run the virtual environment
+            
+cd invoice_detector
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+python -m venv venv
+
+venv\Scripts\activate
+
+3. Install Requirements
+
+     pip install -r requirements.txt
+
+4. Run Flask API
+
+     python app.py
+
+5. Open up a new terminal and download dependencies for Flutter
+      cd mxs1576
+      flutter pub get
+6. Get the URL from Flask API terminal
+	Something like this http://192.168.0.125:5000/
+7. Save it to the config.json file
+{
+  "apiBaseUrl": "http://<your-ip-address>:5000"
+}
+
+6. Run Flutter on and Android Emulator or Android Device:
+
+       flutter run
+
+A full tutorial for setting up an emulator can be found at https://developer.android. com/studio/run/emulator.

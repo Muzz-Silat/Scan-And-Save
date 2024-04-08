@@ -1,5 +1,6 @@
 // ignore_for_file: prefer_const_constructors, file_names
 
+import 'package:demo_flutter/expense_analysis.dart';
 import 'package:demo_flutter/screens/home_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -12,8 +13,9 @@ import 'package:demo_flutter/theme_bloc.dart';
 import 'package:demo_flutter/theme_event.dart';
 import 'package:demo_flutter/theme_state.dart';
 import 'package:demo_flutter/screens/login_screen.dart';
-import 'package:demo_flutter/settings.dart';
+import 'package:demo_flutter/settings_page.dart';
 import 'package:demo_flutter/saved_receipts.dart';
+import 'package:intl/intl.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({Key? key}) : super(key: key);
@@ -24,11 +26,77 @@ class AccountPage extends StatefulWidget {
 
 class _AccountPageState extends State<AccountPage> {
   final _auth = FirebaseAuth.instance;
+  String _income = '\$0.00';
+  String _budget = '\$0.00';
+  String _savings = '\$0.00';
+  String? _profilePicUrl;
+  String _name = '';
 
   Future<void> _logout() async {
     await _auth.signOut();
-    // Replace HomeScreen.id with the route name to navigate to after logout
     Navigator.pushReplacementNamed(context, HomeScreen.id);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchFinancialOverview();
+    _fetchUserData();
+  }
+
+  Future<void> _fetchUserData() async {
+    final User? user = _auth.currentUser;
+    if (user != null) {
+      DocumentSnapshot userProfile = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Profile')
+          .doc('personal')
+          .get();
+      if (userProfile.exists) {
+        Map<String, dynamic> userData =
+            userProfile.data() as Map<String, dynamic>;
+        setState(() {
+          _profilePicUrl = userData['ProfilePicture'];
+          _name = userData['Name'] ?? '';
+        });
+      }
+    }
+  }
+
+  Future<void> _fetchFinancialOverview() async {
+    final user = _auth.currentUser;
+    if (user != null) {
+      final profileDoc = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Profile')
+          .doc('personal')
+          .get();
+
+      if (profileDoc.exists) {
+        final data = profileDoc.data();
+        setState(() {
+          _income = '\$${data?['MonthlyIncome'].toStringAsFixed(2)}';
+          _savings = '\$${data?['Savings'].toStringAsFixed(2)}';
+        });
+      }
+
+      final currentMonthYear = DateFormat('yyyy-MM').format(DateTime.now());
+      final budgetDoc = await FirebaseFirestore.instance
+          .collection('Users')
+          .doc(user.uid)
+          .collection('Budgets')
+          .doc(currentMonthYear)
+          .get();
+
+      if (budgetDoc.exists) {
+        final data = budgetDoc.data();
+        setState(() {
+          _budget = '\$${data?['CurrentTotalBudget'].toStringAsFixed(2)}';
+        });
+      }
+    }
   }
 
   @override
@@ -69,13 +137,14 @@ class _AccountPageState extends State<AccountPage> {
                   ),
                   CircleAvatar(
                     radius: 50,
-                    backgroundImage:
-                        NetworkImage('https://via.placeholder.com/150'),
+                    backgroundImage: _profilePicUrl != null
+                        ? NetworkImage(_profilePicUrl!)
+                        : NetworkImage('https://via.placeholder.com/150'),
                     backgroundColor: Colors.transparent,
                   ),
                   SizedBox(height: 8),
                   Text(
-                    "Username",
+                    _name.isNotEmpty ? _name : "Username",
                     style: TextStyle(
                       color: Colors.white,
                       fontSize: 18,
@@ -88,9 +157,9 @@ class _AccountPageState extends State<AccountPage> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                       children: [
-                        _buildInfoBox('Income', '\$9999.99'),
-                        _buildInfoBox('Budget', '\$9999.99'),
-                        _buildInfoBox('Savings', '\$9999.99'),
+                        _buildInfoBox('Income', _income),
+                        _buildInfoBox('Budget', _budget),
+                        _buildInfoBox('Savings', _savings),
                       ],
                     ),
                   ),
@@ -100,8 +169,8 @@ class _AccountPageState extends State<AccountPage> {
             SizedBox(height: 24), // Adds a space between the boxes
             GestureDetector(
               onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (context) => const SettingsPage()));
+                Navigator.of(context).push(
+                    MaterialPageRoute(builder: (context) => SettingsPage()));
               },
               child: Container(
                 height: 70,
@@ -142,8 +211,8 @@ class _AccountPageState extends State<AccountPage> {
             ),
             GestureDetector(
               onTap: () {
-                Navigator.of(context).push(MaterialPageRoute(
-                    builder: (context) => const ReceiptsPage()));
+                Navigator.of(context).push(
+                    MaterialPageRoute(builder: (context) => ReceiptsPage()));
               },
               child: Container(
                 height: 70,
@@ -162,6 +231,48 @@ class _AccountPageState extends State<AccountPage> {
                     SizedBox(width: 20),
                     Text(
                       'Saved Receipts',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        fontFamily: 'CourierPrime',
+                      ),
+                    ),
+                    Spacer(), // Pushes the arrow icon to the far right
+                    Icon(
+                      Icons.arrow_forward,
+                      color: Color.fromARGB(255, 103, 240, 173),
+                      size: 28,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            SizedBox(
+              height: 24,
+            ),
+            GestureDetector(
+              onTap: () {
+                Navigator.of(context).push(MaterialPageRoute(
+                    builder: (context) => ExpenseAnalysisPage()));
+              },
+              child: Container(
+                height: 70,
+                padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Color.fromARGB(255, 24, 24, 24),
+                  borderRadius: BorderRadius.circular(25),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.bar_chart,
+                      color: Color.fromARGB(255, 103, 240, 173),
+                      size: 28,
+                    ),
+                    SizedBox(width: 20),
+                    Text(
+                      'Expense Prediction',
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 18,

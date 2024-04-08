@@ -403,6 +403,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:demo_flutter/mainPages/transactionsPage.dart';
 import 'package:demo_flutter/mainPages/SmartBudgetPage.dart';
 import 'package:demo_flutter/expense_overview_page.dart';
+import 'package:demo_flutter/currency_conversion.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({Key? key}) : super(key: key);
@@ -412,7 +413,7 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  String _preferredCurrency = 'USD';
+  String preferredCurrency = 'USD';
   DateTime _selectedDate = DateTime.now();
   late DateTime _firstDayOfWeek;
   late DateTime _lastDayOfWeek;
@@ -423,6 +424,7 @@ class _HomePageState extends State<HomePage> {
   double leftover = 0.0;
   Completer<void> _dataFetchCompleter = Completer<void>();
   Future<void>? _dataFetchFuture;
+  CurrencyService currencyService = CurrencyService();
 
   @override
   void initState() {
@@ -459,22 +461,23 @@ class _HomePageState extends State<HomePage> {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    // Fetch settings to get the current budget
-    final settingsRef = FirebaseFirestore.instance
+    // Fetch profile to get the preferred currency, monthly income, and savings
+    final profileRef = FirebaseFirestore.instance
         .collection('Users')
         .doc(user.uid)
-        .collection('Preferences')
-        .doc('Settings');
+        .collection('Profile')
+        .doc('personal');
 
-    final settingsSnapshot = await settingsRef.get();
-    if (settingsSnapshot.exists &&
-        settingsSnapshot.data()!.containsKey('totalBudget')) {
-      currentBudget =
-          (settingsSnapshot.data()!['totalBudget'] as num).toDouble();
+    final profileSnapshot = await profileRef.get();
+    if (profileSnapshot.exists) {
+      preferredCurrency = profileSnapshot.data()?['preferredCurrency'] ?? 'USD';
+      monthlyIncome =
+          (profileSnapshot.data()?['MonthlyIncome'] as num).toDouble();
     }
 
-    // Fetch the totalBudget for the current month from the "Budget" collection
-    String monthYear = getCurrentMonthYear(); // Use the utility function
+    // Fetch the current month's budget from the "Budgets" collection
+    String monthYear =
+        getCurrentMonthYear(); // Utility function to get the format "Year-Month"
     final budgetRef = FirebaseFirestore.instance
         .collection('Users')
         .doc(user.uid)
@@ -482,12 +485,14 @@ class _HomePageState extends State<HomePage> {
         .doc(monthYear);
 
     final budgetSnapshot = await budgetRef.get();
-    if (budgetSnapshot.exists &&
-        budgetSnapshot.data()!.containsKey('totalBudget')) {
-      totalBudget = (budgetSnapshot.data()!['totalBudget'] as num).toDouble();
+    if (budgetSnapshot.exists) {
+      totalBudget =
+          (budgetSnapshot.data()?['InitialTotalBudget'] as num).toDouble();
+      currentBudget =
+          (budgetSnapshot.data()?['CurrentTotalBudget'] as num).toDouble();
     }
 
-    // Continue to fetch and calculate totalExpenses and leftover
+    // Fetch and calculate totalExpenses and leftover
     int month = DateTime.now().month;
     int year = DateTime.now().year;
     await FirebaseFirestore.instance
@@ -498,20 +503,20 @@ class _HomePageState extends State<HomePage> {
         .where('date', isLessThan: DateTime(year, month + 1, 1))
         .get()
         .then((snapshot) {
-      totalExpenses = snapshot.docs
-          .fold(0.0, (sum, doc) => sum + (doc['amount'] as double));
+      totalExpenses = snapshot.docs.fold(
+          0.0, (sum, doc) => sum + (doc.data()['amount'] as num).toDouble());
     });
 
-    leftover = totalBudget - totalExpenses;
+    leftover = currentBudget - totalExpenses;
+    print('Monthly Income: $monthlyIncome');
+    print('Initial Total Budget: $totalBudget');
     print('Current Budget: $currentBudget');
     print('Total Expenses: $totalExpenses');
     print('Leftover: $leftover');
-    print('totalBudget: $totalBudget');
 
     // Ensure you call setState to update the UI if needed
     setState(() {
-      this.currentBudget =
-          currentBudget; // Make sure you have a state variable for currentBudget
+      this.currentBudget = currentBudget;
       this.totalExpenses = totalExpenses;
       this.leftover = leftover;
     });
@@ -535,7 +540,7 @@ class _HomePageState extends State<HomePage> {
 
       if (prefs.exists) {
         setState(() {
-          _preferredCurrency = prefs.data()?['PreferredCurrency'] ?? 'USD';
+          preferredCurrency = prefs.data()?['preferredCurrency'] ?? 'USD';
         });
       }
     }
@@ -612,14 +617,23 @@ class _HomePageState extends State<HomePage> {
       Map<String, dynamic> newBudgetData;
       if (previousBudgetDoc.exists) {
         // Use the previous month's budget as a template for the current month.
-        newBudgetData = previousBudgetDoc.data()!;
-      } else {
-        // If there's no previous month's budget, use default values.
+        // This includes copying both the initial allocations/budget and setting them as the current state.
+        Map<String, dynamic> previousData = previousBudgetDoc.data()!;
         newBudgetData = {
-          'categoryBudgets': {}, // Default values for categories
-          'monthlyIncome': 0.0,
-          'savings': 0.0,
-          'totalBudget': 0.0,
+          'InitialAllocations': Map<String, dynamic>.from(
+              previousData['InitialAllocations'] ?? {}),
+          'InitialTotalBudget': previousData['InitialTotalBudget'] ?? 0.0,
+          'CurrentAllocations': Map<String, dynamic>.from(
+              previousData['InitialAllocations'] ?? {}),
+          'CurrentTotalBudget': previousData['InitialTotalBudget'] ?? 0.0,
+        };
+      } else {
+        // If there's no previous month's budget, use default values for both initial and current states.
+        newBudgetData = {
+          'InitialAllocations': {},
+          'InitialTotalBudget': 0.0,
+          'CurrentAllocations': {},
+          'CurrentTotalBudget': 0.0,
         };
       }
 
@@ -630,20 +644,8 @@ class _HomePageState extends State<HomePage> {
           .collection('Budgets')
           .doc(currentMonthYear)
           .set(newBudgetData);
-
-      // Optionally, refresh Preferences (Settings) to align with the new budget.
-      // This step depends on whether you want the user's preferences to automatically update with the new budget.
-      await firestore
-          .collection('Users')
-          .doc(user.uid)
-          .collection('Preferences')
-          .doc('Settings')
-          .set({
-        'totalBudget': newBudgetData['totalBudget'],
-        'monthlyIncome': newBudgetData['monthlyIncome'],
-        'savings': newBudgetData['savings'],
-        'categoryBudgets': newBudgetData['categoryBudgets'],
-      }, SetOptions(merge: true));
+      print(
+          'Budget for $currentMonthYear created with initial and current allocations/budgets: $newBudgetData');
     }
   }
 
@@ -830,7 +832,9 @@ class _HomePageState extends State<HomePage> {
                           onTap: () {
                             Navigator.of(context).push(MaterialPageRoute(
                                 builder: (context) =>
-                                    const PastTransactionsPage())); // Adjust as needed
+                                    const PastTransactionsPage(
+                                      showLeading: true,
+                                    )));
                           },
                           child: Padding(
                             padding: EdgeInsets.fromLTRB(15, 20, 20, 15),
@@ -991,8 +995,7 @@ class _HomePageState extends State<HomePage> {
   Widget budgetOverview() {
     DateTime now = DateTime.now();
     String monthYear = "${DateFormat.MMMM().format(now)} ${now.year}";
-    double budgetToTotalRatio =
-        totalBudget > 0 ? currentBudget / totalBudget : 0;
+    double budgetToTotalRatio = totalBudget > 0 ? totalBudget / totalBudget : 0;
     double expensesToTotalRatio =
         totalBudget > 0 ? totalExpenses / totalBudget : 0;
     double leftoverRatio = totalBudget > 0 ? leftover / totalBudget : 0;

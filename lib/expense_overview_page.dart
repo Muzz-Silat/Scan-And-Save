@@ -389,7 +389,10 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Expense Overview'),
+        title: Text(
+          'Expense Overview',
+          style: TextStyle(fontFamily: "CourierPrime"),
+        ),
         centerTitle: true,
       ),
       body: SingleChildScrollView(
@@ -675,8 +678,10 @@ class _ExpenseOverviewPageState extends State<ExpenseOverviewPage> {
         ),
         leftTitles: SideTitles(
           showTitles: true,
-          getTextStyles: (context, value) =>
-              const TextStyle(fontFamily: "CourierPrime"),
+          getTextStyles: (context, value) => const TextStyle(
+              fontFamily: "CourierPrime",
+              fontSize: 12,
+              fontWeight: FontWeight.bold),
         ),
         topTitles: SideTitles(
           showTitles: true,

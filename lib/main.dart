@@ -168,16 +168,20 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'theme_bloc.dart';
 import 'theme_state.dart';
+import 'config.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await AppConfig.loadConfig();
   Platform.isAndroid
       ? await Firebase.initializeApp(
           options: const FirebaseOptions(
-              apiKey: "AIzaSyCcvDoMTL02gZUG5dge75_0ngdYjEFP2_E",
-              appId: "1:790734238609:android:ce3e9d04b06eaace56a030",
-              messagingSenderId: "790734238609",
-              projectId: "expensetracker-81336"))
+          apiKey: "AIzaSyCcvDoMTL02gZUG5dge75_0ngdYjEFP2_E",
+          appId: "1:790734238609:android:ce3e9d04b06eaace56a030",
+          messagingSenderId: "790734238609",
+          projectId: "expensetracker-81336",
+          storageBucket: "expensetracker-81336.appspot.com",
+        ))
       : await Firebase.initializeApp();
   runApp(const MyApp());
 }

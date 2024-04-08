@@ -22,19 +22,27 @@ class HomeNavigationPage extends StatefulWidget {
 class _HomeNavigationPageState extends State<HomeNavigationPage> {
   late int _currentIndex;
 
-  // List of pages for navigation
-  final List<Widget> _screens = [
-    const HomePage(),
-    const PastTransactionsPage(),
-    const SmartBudgetPage(),
-    const AccountPage(),
-    //ExpenseAnalysisPage(),
-  ];
+  // // List of pages for navigation
+  // final List<Widget> _screens = [
+  //   const HomePage(),
+  //   const PastTransactionsPage(),
+  //   const SmartBudgetPage(),
+  //   const AccountPage(),
+  //   //ExpenseAnalysisPage(),
+  // ];
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
     _currentIndex = widget.currentIndex;
+    _screens = [
+      const HomePage(),
+      const PastTransactionsPage(),
+      const SmartBudgetPage(),
+      const AccountPage(),
+      //ExpenseAnalysisPage(),
+    ];
   }
 
   void _onItemTapped(int index) {
