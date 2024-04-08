@@ -136,7 +136,9 @@ import 'package:demo_flutter/expense.dart';
 import 'package:demo_flutter/expense_overview_page.dart';
 
 class PastTransactionsPage extends StatefulWidget {
-  const PastTransactionsPage({Key? key}) : super(key: key);
+  final bool showLeading;
+  const PastTransactionsPage({Key? key, this.showLeading = false})
+      : super(key: key);
 
   @override
   State<PastTransactionsPage> createState() => _PastTransactionsPageState();
@@ -274,8 +276,8 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
       firestore
           .collection('Users')
           .doc(user.uid)
-          .collection('Preferences')
-          .doc('Settings')
+          .collection('Profile') // Adjusted path based on updated schema
+          .doc('personal') // Ensure we're accessing the correct document
           .snapshots()
           .listen((snapshot) {
         if (snapshot.exists &&
@@ -520,53 +522,59 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                       double newAmount = double.parse(_amountController.text);
                       String newCategory = _selectedCategory;
 
-                      // Fetch current budget settings
-                      var settingsDoc = await firestore
+                      // Fetch the current month's budget document
+                      String monthYear =
+                          getCurrentMonthYear(); // Utility function to get the format "Year-Month"
+                      var currentBudgetDoc = await firestore
                           .collection('Users')
                           .doc(user.uid)
-                          .collection('Preferences')
-                          .doc('Settings')
+                          .collection('Budgets')
+                          .doc(monthYear)
                           .get();
-                      Map<String, dynamic> settings = settingsDoc.data() ?? {};
-                      Map<String, double> categoryBudgets =
+                      Map<String, dynamic> currentBudgetData =
+                          currentBudgetDoc.data() ?? {};
+                      Map<String, double> currentCategoryAllocations =
                           Map<String, double>.from(
-                              settings['categoryBudgets'] ?? {});
-                      double totalBudget = settings['totalBudget'] ?? 0;
+                              currentBudgetData['CurrentCategoryAllocations'] ??
+                                  {});
+                      double currentTotalBudget =
+                          currentBudgetData['CurrentTotalBudget'] ?? 0;
 
-                      // Calculate the difference and adjust budgets
+                      // Calculate the difference and adjust current allocations and budget
                       double amountDifference = newAmount - oldAmount;
-                      categoryBudgets[oldCategory] =
-                          (categoryBudgets[oldCategory] ?? 0) -
+                      currentCategoryAllocations[oldCategory] =
+                          (currentCategoryAllocations[oldCategory] ?? 0) -
                               amountDifference;
                       if (oldCategory != newCategory) {
-                        categoryBudgets[newCategory] =
-                            (categoryBudgets[newCategory] ?? 0) + newAmount;
+                        currentCategoryAllocations[newCategory] =
+                            (currentCategoryAllocations[newCategory] ?? 0) +
+                                newAmount;
                       }
-                      totalBudget -= amountDifference;
+                      currentTotalBudget -= amountDifference;
 
-                      // Save updated budgets back to Firestore
+                      // Save updated current allocations and budget back to Firestore
                       await firestore
                           .collection('Users')
                           .doc(user.uid)
-                          .collection('Preferences')
-                          .doc('Settings')
-                          .set({
-                        'categoryBudgets': categoryBudgets,
-                        'totalBudget': totalBudget
-                      }, SetOptions(merge: true));
+                          .collection('Budgets')
+                          .doc(monthYear)
+                          .update({
+                        'CurrentCategoryAllocations':
+                            currentCategoryAllocations,
+                        'CurrentTotalBudget': currentTotalBudget,
+                      });
 
                       // Update the expense with new details
                       await _firestoreService.updateExpense(
                         user.uid,
                         expenseId,
                         Expense(
-                          amount: double.parse(_amountController.text),
+                          amount: newAmount,
                           description: _descriptionController.text,
                           date: _selectedDate,
                           currency: _selectedCurrency,
-                          category: _selectedCategory,
+                          category: newCategory,
                         ).toMap(),
-                        // Your Expense.toMap() method here...
                       );
 
                       Navigator.pop(context);
@@ -580,6 +588,11 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
         );
       },
     );
+  }
+
+  String getCurrentMonthYear() {
+    final now = DateTime.now();
+    return "${now.year}-${now.month.toString().padLeft(2, '0')}";
   }
 
   // void editExpense(BuildContext context, String expenseId) async {
@@ -757,6 +770,12 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
 
     return Scaffold(
       appBar: AppBar(
+        leading: widget.showLeading
+            ? IconButton(
+                icon: Icon(Icons.arrow_back),
+                onPressed: () => Navigator.of(context).pop(),
+              )
+            : null,
         title: Text(
           "Past Transactions",
           style: TextStyle(
@@ -919,41 +938,49 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                               final String categoryToDelete =
                                   expenseSnapshot['category'];
 
-                              // Fetch current budget settings
-                              final DocumentSnapshot settingsSnapshot =
+                              // Fetch the current month's budget document
+                              String monthYear =
+                                  getCurrentMonthYear(); // Utility function to get "Year-Month" format
+                              final DocumentSnapshot currentBudgetSnapshot =
                                   await FirebaseFirestore.instance
                                       .collection('Users')
                                       .doc(userId)
-                                      .collection('Preferences')
-                                      .doc('Settings')
+                                      .collection('Budgets')
+                                      .doc(monthYear)
                                       .get();
 
-                              Map<String, dynamic> settings = settingsSnapshot
-                                      .data() as Map<String, dynamic> ??
-                                  {};
-                              Map<String, double> categoryBudgets =
-                                  Map<String, double>.from(
-                                      settings['categoryBudgets'] ?? {});
-                              double totalBudget = settings['totalBudget'] ?? 0;
+                              Map<String, dynamic> currentBudgetData =
+                                  currentBudgetSnapshot.data()
+                                          as Map<String, dynamic> ??
+                                      {};
+                              Map<String, double> currentCategoryAllocations =
+                                  Map<String, double>.from(currentBudgetData[
+                                          'CurrentCategoryAllocations'] ??
+                                      {});
+                              double currentTotalBudget =
+                                  currentBudgetData['CurrentTotalBudget'] ?? 0;
 
-                              // Adjust the category and total budget
-                              categoryBudgets[categoryToDelete] =
-                                  (categoryBudgets[categoryToDelete] ?? 0) +
+                              // Adjust the current allocations and total budget
+                              currentCategoryAllocations[categoryToDelete] =
+                                  (currentCategoryAllocations[
+                                              categoryToDelete] ??
+                                          0) +
                                       amountToDelete;
-                              totalBudget += amountToDelete;
+                              currentTotalBudget += amountToDelete;
 
-                              // Update the budget settings
+                              // Update the current allocations and total budget in Firestore
                               await FirebaseFirestore.instance
                                   .collection('Users')
                                   .doc(userId)
-                                  .collection('Preferences')
-                                  .doc('Settings')
-                                  .set({
-                                'categoryBudgets': categoryBudgets,
-                                'totalBudget': totalBudget
-                              }, SetOptions(merge: true));
+                                  .collection('Budgets')
+                                  .doc(monthYear)
+                                  .update({
+                                'CurrentCategoryAllocations':
+                                    currentCategoryAllocations,
+                                'CurrentTotalBudget': currentTotalBudget,
+                              });
 
-                              // Proceed with deletion
+                              // Proceed with deletion of the expense
                               await FirebaseFirestore.instance
                                   .collection('Users')
                                   .doc(userId)
@@ -996,11 +1023,22 @@ class _PastTransactionsPageState extends State<PastTransactionsPage> {
                     onPressed: () => Navigator.of(context).push(
                         MaterialPageRoute(
                             builder: (_) => ExpenseOverviewPage())),
-                    child: Text('View Expense Overview'),
+                    child: Text(
+                      'View Expense Overview',
+                      style: TextStyle(
+                        fontFamily: 'CourierPrime',
+                        fontSize: 18,
+                        color: Colors.white, // Black text color
+                      ),
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: Theme.of(context)
-                          .primaryColor, // Use the theme's primary color
-                      foregroundColor: Colors.white, // Text color
+                      backgroundColor: Colors.black,
+                      shape: RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.circular(30), // More rounded corners
+                      ),
+                      padding: EdgeInsets.symmetric(
+                          horizontal: 32, vertical: 16), // Larger button
                     ),
                   ),
                 ),

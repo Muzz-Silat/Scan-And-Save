@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'add_expense_page.dart';
-import 'invoice_detection_page.dart';
+import 'receipt_scanning_page.dart';
 
 class AddExpenseOptionsPage extends StatelessWidget {
   @override

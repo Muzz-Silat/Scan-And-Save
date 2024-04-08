@@ -3,7 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:chat_gpt_sdk/chat_gpt_sdk.dart';
-import 'package:demo_flutter/invoice_detection_page.dart';
+import 'package:demo_flutter/receipt_scanning_page.dart';
 import 'expense.dart'; // Ensure this points to your Expense model
 import 'dart:math' as math;
 import 'firestore_service.dart'; // Ensure this points to your Firestore service
@@ -24,10 +24,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
   DateTime _selectedDate = DateTime.now();
   final FirestoreService _firestoreService = FirestoreService();
   List<String> currencies = ['USD', 'EUR', 'GBP', 'JPY', 'AED'];
-  String _selectedCurrency = 'USD'; // Default currency
-  FocusNode _amountFocusNode = FocusNode();
-  Color _labelTextColor = Colors.grey; // Default color for the label text
-
+  String _selectedCurrency = 'USD';
   List<String> categories = [
     'Auto',
     'Groceries',
@@ -85,8 +82,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
     String categorizedResponse =
         response!.choices.first.message!.content.trim();
 
-    return categorizedResponse.replaceAll(
-        ".", ""); // This should be the matched category
+    return categorizedResponse.replaceAll(".", "");
   }
 
   void _submitExpense() async {
@@ -114,30 +110,34 @@ class _AddExpensePageState extends State<AddExpensePage> {
         if (monthlyBudgetDoc.exists) {
           Map<String, dynamic> monthlyBudgetData = monthlyBudgetDoc.data()!;
           double newCategoryBudget =
-              (monthlyBudgetData['categoryBudgets'][expenseCategory] ?? 0) -
+              (monthlyBudgetData['CurrentCategoryAllocations']
+                          [expenseCategory] ??
+                      0) -
                   expenseAmount;
           double newTotalBudget =
-              (monthlyBudgetData['totalBudget'] ?? 0) - expenseAmount;
+              (monthlyBudgetData['CurrentTotalBudget'] ?? 0) - expenseAmount;
 
           newCategoryBudget =
               math.max(0, newCategoryBudget); // Ensure it doesn't go negative
 
           // Safely constructing the update map
-          Map<String, dynamic> updateData = {'totalBudget': newTotalBudget};
-          if (monthlyBudgetData['categoryBudgets'] != null &&
-              monthlyBudgetData['categoryBudgets'] is Map) {
-            (monthlyBudgetData['categoryBudgets'] as Map)[expenseCategory] =
-                newCategoryBudget;
-            updateData['categoryBudgets'] =
-                monthlyBudgetData['categoryBudgets'];
+          Map<String, dynamic> updateData = {
+            'CurrentTotalBudget': newTotalBudget
+          };
+          if (monthlyBudgetData['CurrentCategoryAllocations'] != null &&
+              monthlyBudgetData['CurrentCategoryAllocations'] is Map) {
+            (monthlyBudgetData['CurrentCategoryAllocations']
+                as Map)[expenseCategory] = newCategoryBudget;
+            updateData['CurrentCategoryAllocations'] =
+                monthlyBudgetData['CurrentCategoryAllocations'];
           }
 
-          // Update the Settings document with constructed update data
+          // Update the Budget document with constructed update data
           await FirebaseFirestore.instance
               .collection('Users')
               .doc(user.uid)
-              .collection('Preferences')
-              .doc('Settings')
+              .collection('Budgets')
+              .doc(monthYear)
               .update(updateData);
         }
 
@@ -323,7 +323,7 @@ class _AddExpensePageState extends State<AddExpensePage> {
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      primary: Color.fromARGB(
+                      backgroundColor: Color.fromARGB(
                           255, 103, 240, 173), // Button background color
                       shape: RoundedRectangleBorder(
                         borderRadius:

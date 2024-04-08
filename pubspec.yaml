@@ -43,6 +43,7 @@ dependencies:
   http: ^1.1.0
   fl_chart: ^0.40.0
   chat_gpt_sdk: ^2.2.5
+  firebase_storage: ^11.6.0
 
 
   # The following adds the Cupertino Icons font to your application.
@@ -83,6 +84,7 @@ flutter:
     - assets/images/icons/google.png
     - assets/images/icons/facebook.png
     - assets/images/icons/linkedin.png
+    - config.json
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/assets-and-images/#resolution-aware

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:demo_flutter/config.dart';
 
 class ExpenseAnalysisPage extends StatefulWidget {
   @override
@@ -11,13 +12,9 @@ class ExpenseAnalysisPage extends StatefulWidget {
 }
 
 class _ExpenseAnalysisPageState extends State<ExpenseAnalysisPage> {
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   double _predictedExpense = 0.0;
   bool _isLoading = false;
-
-  String getCurrentUserUID() {
-    return _auth.currentUser!.uid;
-  }
+  final Color accentColor = Color.fromARGB(255, 103, 240, 173);
 
   Future<void> _getPrediction(List<double> expenses) async {
     setState(() {
@@ -26,13 +23,15 @@ class _ExpenseAnalysisPageState extends State<ExpenseAnalysisPage> {
     final apiURL =
         "http://192.168.0.125:5000/predict"; // Change to your API URL
     try {
-      final response = await http.post(Uri.parse(apiURL),
+      final response = await http.post(
+          Uri.parse('${AppConfig.apiBaseUrl}/predict'),
           headers: {"Content-Type": "application/json"},
           body: json.encode({"expenses": expenses}));
       if (response.statusCode == 200) {
         final responseData = json.decode(response.body);
         setState(() {
-          _predictedExpense = responseData['predicted_expense'];
+          _predictedExpense = double.parse(
+              responseData['predicted_expense'].toStringAsFixed(2));
         });
       } else {
         print("Failed to fetch prediction: ${response.body}");
@@ -89,27 +88,58 @@ class _ExpenseAnalysisPageState extends State<ExpenseAnalysisPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text('Expense Analysis'),
+        title: Text(
+          'Expense Analysis',
+          style: TextStyle(fontFamily: "CourierPrime"),
+        ), // Use the specified accent color here
       ),
-      body: Center(
-        child: _isLoading
-            ? CircularProgressIndicator()
-            : Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
+      body: Padding(
+        padding: EdgeInsets.all(16.0), // Add padding for better layout
+        child: Center(
+          child: _isLoading
+              ? CircularProgressIndicator()
+              : Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
                       'Predicted Expenses for Next Month: \$$_predictedExpense',
-                      style: TextStyle(fontSize: 20)),
-                  SizedBox(height: 20),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final expenses = await _fetchLast30DaysExpenses();
-                      _getPrediction(expenses);
-                    },
-                    child: Text('Analyze Expenses'),
-                  ),
-                ],
-              ),
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontFamily: "CourierPrime",
+                        fontWeight: FontWeight.bold,
+                        color: accentColor, // Use accent color for text
+                      ),
+                    ),
+                    SizedBox(height: 20),
+                    Text(
+                      'Note: Prediction accuracy may vary with the amount of expense data available.',
+                      style: TextStyle(
+                        fontFamily: "CourierPrime",
+                        fontSize: 16,
+                        fontStyle: FontStyle.italic,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    SizedBox(height: 40),
+                    ElevatedButton(
+                      onPressed: () async {
+                        final expenses = await _fetchLast30DaysExpenses();
+                        _getPrediction(expenses);
+                      },
+                      child: Text(
+                        'Analyze Expenses',
+                        style: TextStyle(
+                            fontFamily: "CourierPrime",
+                            fontWeight: FontWeight.bold),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        primary: accentColor, // Use accent color for button
+                        onPrimary: Colors.black, // Text color on the button
+                      ),
+                    ),
+                  ],
+                ),
+        ),
       ),
     );
   }
